@@ -17,6 +17,15 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: dashboard build
+        working-directory: dashboard
+        run: bun install && bun run build
+
+      - name: embed dashboard
+        run: |
+          rm -rf internal/dashboard/dist
+          cp -r dashboard/dist internal/dashboard/dist
+
       - name: go build
         run: go build ./...
 
@@ -25,10 +34,6 @@ jobs:
 
       - name: go test
         run: go test ./... -race -count=1
-
-      - name: dashboard build
-        working-directory: dashboard
-        run: bun install && bun run build
 
       - name: docs build
         working-directory: docs
@@ -46,8 +51,13 @@ jobs:
         with:
           go-version: "1.23"
 
-      - name: build binaries
+      - uses: oven-sh/setup-bun@v2
+
+      - name: build
         run: |
+          cd dashboard && bun install && bun run build && cd ..
+          rm -rf internal/dashboard/dist
+          cp -r dashboard/dist internal/dashboard/dist
           go build -o bin/broker ./cmd/broker
           go build -o bin/broker-server ./cmd/broker-server
           go build -o bin/broker-agent ./cmd/broker-agent
