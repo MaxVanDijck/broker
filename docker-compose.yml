@@ -1,0 +1,50 @@
+# Local multi-node testing environment.
+#
+#   docker compose up
+#
+# This starts one server and two agent nodes. Submit jobs with:
+#
+#   broker launch -c dev-cluster echo hello
+#   broker exec dev-cluster python -c "print('hello')"
+#   broker status
+#
+# The server dashboard is at http://localhost:8080.
+
+services:
+  server:
+    build:
+      context: .
+    entrypoint: ["broker-server"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - server-data:/data
+    environment:
+      - BROKER_DATA_DIR=/data
+
+  node-1:
+    build:
+      context: .
+    entrypoint:
+      - broker-agent
+      - --server=ws://server:8080
+      - --cluster=dev-cluster
+      - --node-id=node-1
+      - --self-terminate-after=0
+    depends_on:
+      - server
+
+  node-2:
+    build:
+      context: .
+    entrypoint:
+      - broker-agent
+      - --server=ws://server:8080
+      - --cluster=dev-cluster
+      - --node-id=node-2
+      - --self-terminate-after=0
+    depends_on:
+      - server
+
+volumes:
+  server-data:

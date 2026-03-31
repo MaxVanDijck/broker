@@ -1,0 +1,51 @@
+package domain
+
+import "fmt"
+
+type CloudProvider string
+
+const (
+	CloudAWS        CloudProvider = "aws"
+	CloudGCP        CloudProvider = "gcp"
+	CloudAzure      CloudProvider = "azure"
+	CloudKubernetes CloudProvider = "kubernetes"
+)
+
+type Resources struct {
+	Cloud        CloudProvider `yaml:"cloud,omitempty" json:"cloud,omitempty"`
+	Region       string        `yaml:"region,omitempty" json:"region,omitempty"`
+	Zone         string        `yaml:"zone,omitempty" json:"zone,omitempty"`
+	Accelerators string        `yaml:"accelerators,omitempty" json:"accelerators,omitempty"`
+	CPUs         string        `yaml:"cpus,omitempty" json:"cpus,omitempty"`
+	Memory       string        `yaml:"memory,omitempty" json:"memory,omitempty"`
+	InstanceType string        `yaml:"instance_type,omitempty" json:"instance_type,omitempty"`
+	UseSpot      bool          `yaml:"use_spot,omitempty" json:"use_spot,omitempty"`
+	DiskSizeGB   int           `yaml:"disk_size,omitempty" json:"disk_size,omitempty"`
+	Ports        []string      `yaml:"ports,omitempty" json:"ports,omitempty"`
+	ImageID      string        `yaml:"image_id,omitempty" json:"image_id,omitempty"`
+}
+
+func (r Resources) InfraString() string {
+	s := string(r.Cloud)
+	if s == "" {
+		return "any"
+	}
+	if r.Region != "" {
+		s += "/" + r.Region
+	}
+	if r.Zone != "" {
+		s += "/" + r.Zone
+	}
+	return s
+}
+
+func (r Resources) String() string {
+	parts := r.InfraString()
+	if r.InstanceType != "" {
+		parts += fmt.Sprintf(", %s", r.InstanceType)
+	}
+	if r.Accelerators != "" {
+		parts += fmt.Sprintf(", %s", r.Accelerators)
+	}
+	return parts
+}

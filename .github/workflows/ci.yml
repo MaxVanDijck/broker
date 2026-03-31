@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -race -count=1
+
+      - name: dashboard build
+        working-directory: dashboard
+        run: bun install && bun run build
+
+      - name: docs build
+        working-directory: docs
+        run: |
+          hugo version || (curl -sSL https://github.com/gohugoio/hugo/releases/download/v0.147.6/hugo_extended_0.147.6_linux-amd64.tar.gz | tar xz -C /usr/local/bin)
+          hugo --gc --minify --logLevel error
+
+  e2e-local:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: build binaries
+        run: |
+          go build -o bin/broker ./cmd/broker
+          go build -o bin/broker-server ./cmd/broker-server
+          go build -o bin/broker-agent ./cmd/broker-agent
+
+      - name: start server
+        run: |
+          bin/broker-server &
+          sleep 2
+
+      - name: start agent
+        run: |
+          bin/broker-agent --server ws://localhost:8080 --cluster test --node-id local-0 --self-terminate-after 0 &
+          sleep 2
+
+      - name: launch cluster
+        run: bin/broker launch -c test echo "hello from ci"
+
+      - name: verify status
+        run: |
+          bin/broker status | grep test
+          bin/broker status | grep UP
+
+      - name: exec job
+        run: bin/broker exec test echo "job from ci"
+
+      - name: verify jobs api
+        run: |
+          JOBS=$(curl -sf http://localhost:8080/api/v1/jobs | jq '.jobs | length')
+          [ "$JOBS" -gt 0 ] || (echo "no jobs found" && exit 1)
+
+      - name: verify nodes api
+        run: |
+          NODES=$(curl -sf http://localhost:8080/api/v1/clusters/test/nodes | jq '.nodes | length')
+          [ "$NODES" -gt 0 ] || (echo "no nodes found" && exit 1)
+
+      - name: teardown
+        run: bin/broker down -y test
+
+      - name: verify teardown
+        run: |
+          ! bin/broker status | grep -q "^test "

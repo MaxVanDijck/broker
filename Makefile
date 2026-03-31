@@ -1,0 +1,51 @@
+GOBIN := $(shell go env GOPATH)/bin
+VERSION ?= 0.1.0
+LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
+
+.PHONY: all build build-server build-cli build-agent dashboard proto test lint fmt clean docs docs-serve
+
+all: build
+
+build: build-cli build-server build-agent
+
+build-cli:
+	go build $(LDFLAGS) -o bin/broker ./cmd/broker
+
+build-server: dashboard
+	go build $(LDFLAGS) -o bin/broker-server ./cmd/broker-server
+
+build-agent:
+	go build $(LDFLAGS) -o bin/broker-agent ./cmd/broker-agent
+
+dashboard:
+	cd dashboard && bun run build
+	rm -rf internal/dashboard/dist
+	cp -r dashboard/dist internal/dashboard/dist
+
+proto:
+	PATH="$(GOBIN):$$PATH" protoc \
+		--go_out=. --go_opt=module=broker \
+		--connect-go_out=. --connect-go_opt=module=broker \
+		proto/broker.proto
+	PATH="$(GOBIN):$$PATH" protoc \
+		--go_out=. --go_opt=module=broker \
+		proto/agent.proto
+	cd dashboard && npx buf generate ../proto
+
+test:
+	go test ./... -race -count=1
+
+lint:
+	go vet ./...
+
+fmt:
+	gofmt -s -w .
+
+docs:
+	cd docs && hugo --gc --minify --logLevel error
+
+docs-serve:
+	cd docs && hugo server --buildDrafts
+
+clean:
+	rm -rf bin/ docs/public/ dashboard/dist internal/dashboard/dist

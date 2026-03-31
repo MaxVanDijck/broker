@@ -1,0 +1,47 @@
+baseURL: https://broker.dev/
+title: broker
+locale: en-us
+
+module:
+  imports:
+    - path: github.com/imfing/hextra
+
+enableRobotsTXT: true
+enableGitInfo: false
+
+ignoreLogs:
+  - deprecated-site-data
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: Blog
+      pageRef: /blog
+      weight: 2
+    - name: GitHub
+      url: https://github.com/broker-dev/broker
+      weight: 3
+      params:
+        icon: github
+
+params:
+  description: Run AI workloads on any infrastructure.
+  navbar:
+    displayTitle: true
+    displayLogo: false
+  page:
+    width: wide
+  footer:
+    displayCopyright: false
+  editURL:
+    enable: true
+    base: https://github.com/broker-dev/broker/edit/main/docs/content
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    noClasses: false

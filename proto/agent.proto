@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package broker.agent.v1;
+
+option go_package = "broker/proto/agentpb";
+
+// Envelope wraps all messages sent over the WebSocket tunnel.
+// Each WebSocket frame is a single serialized Envelope.
+message Envelope {
+  oneof payload {
+    // Agent -> Server
+    Register register = 1;
+    Heartbeat heartbeat = 2;
+    LogBatch log_batch = 3;
+    JobUpdate job_update = 4;
+    SSHSession ssh_session = 10;
+
+    // Server -> Agent
+    RegisterAck register_ack = 20;
+    SubmitJob submit_job = 21;
+    CancelJob cancel_job = 22;
+    TerminateNode terminate_node = 23;
+    SSHSessionData ssh_session_data = 30;
+  }
+}
+
+// --- Agent -> Server ---
+
+message Register {
+  string node_id = 1;
+  string cluster_name = 2;
+  string token = 3;
+  NodeInfo node_info = 4;
+}
+
+message NodeInfo {
+  string hostname = 1;
+  string public_ip = 2;
+  string private_ip = 3;
+  string os = 4;
+  string arch = 5;
+  int32 cpus = 6;
+  int64 memory_bytes = 7;
+  int64 disk_bytes = 8;
+  repeated GPUInfo gpus = 9;
+  int32 ssh_port = 10;
+}
+
+message GPUInfo {
+  string model = 1;
+  int64 memory_bytes = 2;
+  string uuid = 3;
+  int32 index = 4;
+}
+
+message Heartbeat {
+  string node_id = 1;
+  int64 timestamp_unix = 2;
+  double cpu_percent = 3;
+  double memory_percent = 4;
+  int64 disk_used_bytes = 5;
+  repeated GPUMetrics gpu_metrics = 6;
+  repeated string running_job_ids = 7;
+}
+
+message GPUMetrics {
+  int32 index = 1;
+  double utilization_percent = 2;
+  int64 memory_used_bytes = 3;
+  double temperature_celsius = 4;
+}
+
+message LogBatch {
+  string job_id = 1;
+  repeated LogEntry entries = 2;
+}
+
+message LogEntry {
+  int64 timestamp_unix_nano = 1;
+  string stream = 2; // "stdout" or "stderr"
+  bytes data = 3;
+}
+
+message JobUpdate {
+  string job_id = 1;
+  JobState state = 2;
+  int32 exit_code = 3;
+  string error = 4;
+}
+
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_PULLING = 1;
+  JOB_STATE_SETUP = 2;
+  JOB_STATE_RUNNING = 3;
+  JOB_STATE_SUCCEEDED = 4;
+  JOB_STATE_FAILED = 5;
+  JOB_STATE_CANCELLED = 6;
+}
+
+// SSH session data flowing from agent to server (user -> agent -> server -> CLI).
+message SSHSession {
+  string session_id = 1;
+  bytes data = 2;
+  bool closed = 3;
+}
+
+// --- Server -> Agent ---
+
+message RegisterAck {
+  bool accepted = 1;
+  string error = 2;
+  int32 heartbeat_interval_seconds = 3;
+}
+
+message SubmitJob {
+  string job_id = 1;
+  string name = 2;
+
+  // Docker mode (host mode agent manages containers)
+  string image = 3;
+  repeated string command = 4;
+  map<string, string> env = 5;
+  repeated string ports = 6;
+  repeated string gpu_ids = 7;
+
+  // Direct exec mode (run mode agent inside container)
+  string setup_script = 8;
+  string run_script = 9;
+  string workdir = 10;
+}
+
+message CancelJob {
+  string job_id = 1;
+  bool force = 2;
+}
+
+message TerminateNode {
+  string reason = 1;
+  int32 grace_period_seconds = 2;
+}
+
+// SSH session data flowing from server to agent (CLI -> server -> agent -> user).
+message SSHSessionData {
+  string session_id = 1;
+  bytes data = 2;
+  bool closed = 3;
+}

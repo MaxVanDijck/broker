@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package broker.v1;
+
+option go_package = "broker/proto/brokerpb";
+
+service BrokerService {
+  rpc Launch(LaunchRequest) returns (LaunchResponse);
+  rpc Stop(ClusterRequest) returns (ClusterResponse);
+  rpc Start(ClusterRequest) returns (ClusterResponse);
+  rpc Down(ClusterRequest) returns (ClusterResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  rpc Logs(LogsRequest) returns (stream LogsResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+}
+
+message TaskSpec {
+  string name = 1;
+  string workdir = 2;
+  int32 num_nodes = 3;
+  Resources resources = 4;
+  map<string, string> envs = 5;
+  string setup = 6;
+  string run = 7;
+}
+
+message Resources {
+  string cloud = 1;
+  string region = 2;
+  string zone = 3;
+  string accelerators = 4;
+  string cpus = 5;
+  string memory = 6;
+  string instance_type = 7;
+  bool use_spot = 8;
+  int32 disk_size_gb = 9;
+  repeated string ports = 10;
+  string image_id = 11;
+}
+
+message LaunchRequest {
+  TaskSpec task = 1;
+  string cluster_name = 2;
+  bool retry_until_up = 3;
+  int32 idle_minutes_to_autostop = 4;
+  bool dryrun = 5;
+}
+
+message LaunchResponse {
+  string cluster_name = 1;
+  string job_id = 2;
+  string head_ip = 3;
+}
+
+message ClusterRequest {
+  string cluster_name = 1;
+}
+
+message ClusterResponse {
+  string cluster_name = 1;
+  string status = 2;
+}
+
+message StatusRequest {
+  repeated string cluster_names = 1;
+  bool refresh = 2;
+}
+
+message ClusterInfo {
+  string name = 1;
+  string status = 2;
+  string cloud = 3;
+  string region = 4;
+  string resources = 5;
+  string head_ip = 6;
+  int32 num_nodes = 7;
+  string launched_at = 8;
+}
+
+message StatusResponse {
+  repeated ClusterInfo clusters = 1;
+}
+
+message ExecRequest {
+  string cluster_name = 1;
+  TaskSpec task = 2;
+}
+
+message ExecResponse {
+  string job_id = 1;
+}
+
+message LogsRequest {
+  string cluster_name = 1;
+  string job_id = 2;
+  bool follow = 3;
+}
+
+message LogsResponse {
+  string line = 1;
+}
+
+message CancelJobRequest {
+  string cluster_name = 1;
+  repeated string job_ids = 2;
+  bool all = 3;
+}
+
+message CancelJobResponse {}
