@@ -195,8 +195,8 @@ func TestGenerateUserData(t *testing.T) {
 		if !strings.HasPrefix(script, "#!/bin/bash") {
 			t.Error("expected script to start with shebang")
 		}
-		if !strings.Contains(script, "--server \"https://broker.example.com\"") {
-			t.Error("expected script to contain --server flag with server URL")
+		if !strings.Contains(script, "--server \"wss://broker.example.com\"") {
+			t.Error("expected script to contain --server flag with websocket URL")
 		}
 		if !strings.Contains(script, "--cluster \"test-cluster\"") {
 			t.Error("expected script to contain --cluster flag with cluster name")
