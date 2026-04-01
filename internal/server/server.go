@@ -60,8 +60,13 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 		logbus:      NewLogBus(),
 		sshSessions: newSSHSessionManager(),
 		events:      evBus,
-		autostop:    NewAutostopManager(s, r, evBus, logger.With("component", "autostop")),
+		autostop:    NewAutostopManager(s, logger.With("component", "autostop")),
 		pendingJobs: make(map[string][]pendingJob),
+	}
+
+	srv.autostop.onTeardown = func(cluster *domain.Cluster) {
+		srv.logger.Info("autostop: tearing down cluster", "name", cluster.Name, "id", cluster.ID)
+		srv.teardownCluster(cluster)
 	}
 
 	srv.Tunnel.SetCallbacks(
@@ -191,8 +196,7 @@ func (s *Server) watchProvisionedCluster(clusterID string, prov provider.Provide
 func (s *Server) onAgentRegister(ac *AgentConnection) {
 	s.logger.Info("agent online", "node_id", ac.NodeID, "cluster", ac.ClusterName)
 
-	// Resolve the cluster name to a cluster ID
-	cluster, err := s.store.GetCluster(ac.ClusterName)
+	cluster, err := s.resolveCluster(ac.ClusterName)
 	if err != nil || cluster == nil {
 		s.logger.Warn("agent registered for unknown cluster", "cluster", ac.ClusterName)
 		return
@@ -240,7 +244,7 @@ func (s *Server) trySetClusterUp(clusterID string) {
 	if err != nil || cluster == nil {
 		return
 	}
-	if cluster.Status != domain.ClusterStatusUp {
+	if cluster.Status == domain.ClusterStatusInit || cluster.Status == domain.ClusterStatusStopped {
 		cluster.Status = domain.ClusterStatusUp
 		s.store.UpdateCluster(cluster)
 		s.events.Publish(Event{
@@ -554,12 +558,12 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		}
 	}
 
-	existing, err := s.store.GetCluster(clusterName)
+	existing, err := s.resolveCluster(clusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check cluster: %w", err))
 	}
 
-	// GetCluster returns only active clusters (not terminated), so if
+	// resolveCluster returns only active clusters (not terminated), so if
 	// existing is nil, we create a new one. Old terminated clusters with
 	// the same name stay in the DB as history.
 	if existing == nil {
@@ -676,7 +680,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 }
 
 func (s *Server) Stop(ctx context.Context, req *connect.Request[brokerpb.ClusterRequest]) (*connect.Response[brokerpb.ClusterResponse], error) {
-	cluster, err := s.store.GetCluster(req.Msg.ClusterName)
+	cluster, err := s.resolveCluster(req.Msg.ClusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -684,7 +688,7 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[brokerpb.Cluster
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("cluster %q not found", req.Msg.ClusterName))
 	}
 
-	s.logger.Info("stopping cluster", "name", req.Msg.ClusterName)
+	s.logger.Info("stopping cluster", "name", cluster.Name, "id", cluster.ID)
 
 	if cluster.Cloud != "" {
 		if prov, ok := s.registry.Get(cluster.Cloud); ok {
@@ -706,7 +710,7 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[brokerpb.Cluster
 }
 
 func (s *Server) Start(ctx context.Context, req *connect.Request[brokerpb.ClusterRequest]) (*connect.Response[brokerpb.ClusterResponse], error) {
-	cluster, err := s.store.GetCluster(req.Msg.ClusterName)
+	cluster, err := s.resolveCluster(req.Msg.ClusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -714,7 +718,7 @@ func (s *Server) Start(ctx context.Context, req *connect.Request[brokerpb.Cluste
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("cluster %q not found", req.Msg.ClusterName))
 	}
 
-	s.logger.Info("starting cluster", "name", req.Msg.ClusterName)
+	s.logger.Info("starting cluster", "name", cluster.Name, "id", cluster.ID)
 
 	if cluster.Cloud != "" {
 		if prov, ok := s.registry.Get(cluster.Cloud); ok {
@@ -736,7 +740,7 @@ func (s *Server) Start(ctx context.Context, req *connect.Request[brokerpb.Cluste
 }
 
 func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.ClusterRequest]) (*connect.Response[brokerpb.ClusterResponse], error) {
-	cluster, err := s.store.GetCluster(req.Msg.ClusterName)
+	cluster, err := s.resolveCluster(req.Msg.ClusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -744,8 +748,24 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("cluster %q not found", req.Msg.ClusterName))
 	}
 
-	s.logger.Info("tearing down cluster", "name", req.Msg.ClusterName)
+	s.logger.Info("tearing down cluster", "name", cluster.Name, "id", cluster.ID)
+	s.teardownCluster(cluster)
+
+	return connect.NewResponse(&brokerpb.ClusterResponse{
+		ClusterName: cluster.Name,
+		Status:      string(domain.ClusterStatusTerminating),
+	}), nil
+}
+
+// teardownCluster transitions a cluster to TERMINATING, tears down cloud
+// resources asynchronously, then marks it TERMINATED. All teardown paths
+// (ConnectRPC Down, REST DELETE, autostop) funnel through here.
+func (s *Server) teardownCluster(cluster *domain.Cluster) {
 	s.autostop.Remove(cluster.ID)
+
+	if cluster.Status == domain.ClusterStatusTerminating || cluster.Status == domain.ClusterStatusTerminated {
+		return
+	}
 
 	cluster.Status = domain.ClusterStatusTerminating
 	s.store.UpdateCluster(cluster)
@@ -758,17 +778,12 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 		},
 	})
 
-	// Teardown cloud resources asynchronously so the CLI/dashboard gets
-	// immediate feedback. The cluster transitions TERMINATING -> TERMINATED.
-	// Capture identifiers by value to avoid racing on the cluster pointer.
 	clusterID := cluster.ID
 	clusterName := cluster.Name
 	clusterCloud := cluster.Cloud
 	go func() {
 		if clusterCloud != "" {
 			if prov, ok := s.registry.Get(clusterCloud); ok {
-				// Re-fetch the cluster from the store so the teardown
-				// goroutine has its own copy.
 				c, _ := s.store.GetClusterByID(clusterID)
 				if c != nil {
 					if err := prov.Teardown(context.Background(), c); err != nil {
@@ -792,11 +807,6 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 		})
 		s.logger.Info("cluster terminated", "name", clusterName)
 	}()
-
-	return connect.NewResponse(&brokerpb.ClusterResponse{
-		ClusterName: cluster.Name,
-		Status:      string(domain.ClusterStatusTerminating),
-	}), nil
 }
 
 func (s *Server) Status(ctx context.Context, req *connect.Request[brokerpb.StatusRequest]) (*connect.Response[brokerpb.StatusResponse], error) {
@@ -826,7 +836,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[brokerpb.Statu
 }
 
 func (s *Server) Exec(ctx context.Context, req *connect.Request[brokerpb.ExecRequest]) (*connect.Response[brokerpb.ExecResponse], error) {
-	cluster, err := s.store.GetCluster(req.Msg.ClusterName)
+	cluster, err := s.resolveCluster(req.Msg.ClusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -884,7 +894,7 @@ func (s *Server) Logs(ctx context.Context, req *connect.Request[brokerpb.LogsReq
 		if jobID != "" {
 			jobIDs = []string{jobID}
 		} else if clusterName != "" {
-			cluster, err := s.store.GetCluster(clusterName)
+			cluster, err := s.resolveCluster(clusterName)
 			if err != nil {
 				return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get cluster: %w", err))
 			}
@@ -966,7 +976,7 @@ func (s *Server) CancelJob(ctx context.Context, req *connect.Request[brokerpb.Ca
 			jobsToCancel = append(jobsToCancel, job)
 		}
 	} else if clusterName != "" {
-		cluster, err := s.store.GetCluster(clusterName)
+		cluster, err := s.resolveCluster(clusterName)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -1028,7 +1038,6 @@ func (s *Server) CancelJob(ctx context.Context, req *connect.Request[brokerpb.Ca
 
 // REST API handlers
 
-// resolveCluster looks up a cluster by UUID first, then falls back to name.
 type clusterListItemJSON struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -1090,7 +1099,7 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 	var jobs []*domain.Job
 	var err error
 	if clusterName != "" {
-		cluster, cerr := s.store.GetCluster(clusterName)
+		cluster, cerr := s.resolveCluster(clusterName)
 		if cerr != nil {
 			http.Error(w, cerr.Error(), http.StatusInternalServerError)
 			return

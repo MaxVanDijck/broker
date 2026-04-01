@@ -845,7 +845,12 @@ func TestHandleClusterMetrics(t *testing.T) {
 
 	t.Run("given a post request, when hitting metrics endpoint, then 405 is returned", func(t *testing.T) {
 		analytics := &stubAnalyticsStore{}
+		ss4, _ := store.NewSQLite(":memory:")
+		defer ss4.Close()
+		ss4.CreateCluster(&domain.Cluster{ID: "tc-id3", Name: "test-cluster", Status: domain.ClusterStatusUp})
+
 		srv := &Server{
+			store:     ss4,
 			analytics: analytics,
 			logger:    slog.Default(),
 		}

@@ -1,7 +1,6 @@
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, useCallback } from "react";
-import { broker } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { LogViewer } from "@/components/log-viewer";
 import { MetricsChart } from "@/components/metrics-chart";
@@ -130,7 +129,7 @@ export function ClusterDetailPage() {
                   icon={Server}
                   onClick={async () => {
                     if (confirm(`Tear down cluster ${clusterName}?`)) {
-                      await broker.down({ clusterName }).catch(() => {});
+                      await fetch(`/api/v1/clusters/${id}`, { method: "DELETE" });
                       queryClient.invalidateQueries({ queryKey: ["cluster", id] });
                       queryClient.invalidateQueries({ queryKey: ["clusters"] });
                     }

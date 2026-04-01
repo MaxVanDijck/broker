@@ -516,15 +516,8 @@ func (p *Provider) resolveAMI(ctx context.Context, client *ssm.Client, needsGPU 
 	result, err := client.GetParameter(ctx, &ssm.GetParameterInput{
 		Name: aws.String(param),
 	})
-	if err != nil && needsGPU {
-		// Fall back to default AMI if GPU AMI parameter doesn't exist
-		p.logger.Warn("gpu ami not found via ssm, falling back to default", "error", err)
-		result, err = client.GetParameter(ctx, &ssm.GetParameterInput{
-			Name: aws.String(amiSSMParameterDefault),
-		})
-	}
 	if err != nil {
-		return "", fmt.Errorf("get AMI from SSM: %w", err)
+		return "", fmt.Errorf("get AMI from SSM (param=%s): %w", param, err)
 	}
 
 	return aws.ToString(result.Parameter.Value), nil

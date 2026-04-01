@@ -87,7 +87,6 @@ func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: validate token
 	h.logger.Info("agent registered", "node_id", reg.NodeId, "cluster", reg.ClusterName)
 
 	ac := &AgentConnection{

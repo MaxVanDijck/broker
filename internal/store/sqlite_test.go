@@ -382,8 +382,8 @@ func TestSQLiteStore_ClusterLifecycle(t *testing.T) {
 			ID:       "c-lifecycle",
 			Name:     "lifecycle-cluster",
 			Status:   domain.ClusterStatusInit,
-			Cloud:    domain.CloudGCP,
-			Region:   "us-central1",
+			Cloud:    domain.CloudAWS,
+			Region:   "us-east-1",
 			NumNodes: 4,
 			UserID:   "user-1",
 		}
@@ -402,8 +402,8 @@ func TestSQLiteStore_ClusterLifecycle(t *testing.T) {
 		if got.ID != "c-lifecycle" {
 			t.Errorf("expected ID c-lifecycle, got %s", got.ID)
 		}
-		if got.Cloud != domain.CloudGCP {
-			t.Errorf("expected cloud gcp, got %s", got.Cloud)
+		if got.Cloud != domain.CloudAWS {
+			t.Errorf("expected cloud aws, got %s", got.Cloud)
 		}
 		if got.NumNodes != 4 {
 			t.Errorf("expected 4 nodes, got %d", got.NumNodes)

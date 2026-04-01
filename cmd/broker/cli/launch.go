@@ -24,7 +24,6 @@ func launchCmd() *cobra.Command {
 		gpus         string
 		cloud        string
 		workdirFlag  string
-		detach       bool
 		autostopFlag time.Duration
 	)
 
@@ -74,24 +73,15 @@ func launchCmd() *cobra.Command {
 			}
 
 			if resp.Msg.InstanceType != "" && resp.Msg.HourlyPrice > 0 {
-				region := resp.Msg.Region
-				if region == "" {
-					region = "us-east-1"
-				}
 				spot := ""
 				if task.Resources != nil && task.Resources.UseSpot {
 					spot = " spot"
 				}
-				fmt.Printf("Cluster %s launched on %s%s ($%.2f/hr) in %s\n",
-					resp.Msg.ClusterName, resp.Msg.InstanceType, spot, resp.Msg.HourlyPrice, region)
-			} else {
-				fmt.Printf("Cluster %s launched\n", resp.Msg.ClusterName)
+				fmt.Printf("Provisioning %s%s ($%.2f/hr)...\n",
+					resp.Msg.InstanceType, spot, resp.Msg.HourlyPrice)
 			}
-			if resp.Msg.HeadIp != "" {
-				fmt.Printf("Head node: %s\n", resp.Msg.HeadIp)
-			}
+			fmt.Printf("Cluster %s created. Waiting for node to connect.\n", resp.Msg.ClusterName)
 
-			_ = detach
 			return nil
 		},
 	}
@@ -100,7 +90,6 @@ func launchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&gpus, "gpus", "", "GPU type and count (e.g. A100:4)")
 	cmd.Flags().StringVar(&cloud, "cloud", "", "Cloud provider")
 	cmd.Flags().StringVarP(&workdirFlag, "workdir", "w", "", "Working directory to upload")
-	cmd.Flags().BoolVarP(&detach, "detach-run", "d", false, "Detach after job submission")
 	cmd.Flags().DurationVar(&autostopFlag, "autostop", 30*time.Minute, "Idle duration before auto-teardown (0 to disable)")
 
 	return cmd

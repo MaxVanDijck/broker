@@ -66,7 +66,7 @@ type TimeRange struct {
 }
 
 // AnalyticsStore handles append-only analytical data: logs, metrics, costs.
-// Backed by chdb (local) or ClickHouse (production).
+// Backed by SQLite (local) or ClickHouse (production).
 type AnalyticsStore interface {
 	// Logs
 	InsertLogs(ctx context.Context, entries []LogEntry) error

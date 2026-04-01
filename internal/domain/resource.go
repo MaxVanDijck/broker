@@ -3,10 +3,7 @@ package domain
 type CloudProvider string
 
 const (
-	CloudAWS        CloudProvider = "aws"
-	CloudGCP        CloudProvider = "gcp"
-	CloudAzure      CloudProvider = "azure"
-	CloudKubernetes CloudProvider = "kubernetes"
+	CloudAWS CloudProvider = "aws"
 )
 
 type Resources struct {

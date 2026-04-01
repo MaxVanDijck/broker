@@ -192,7 +192,18 @@ func TestAutostopWatchdog_IdleClusterTerminatedWithProvider(t *testing.T) {
 		events := NewEventBus(slog.Default())
 		logger := slog.Default()
 
-		m := NewAutostopManager(db, registry, events, logger)
+		m := NewAutostopManager(db, logger)
+
+		srv := &Server{
+			store:    db,
+			registry: registry,
+			logger:   logger,
+			events:   events,
+			autostop: m,
+		}
+		m.onTeardown = func(cluster *domain.Cluster) {
+			srv.teardownCluster(cluster)
+		}
 
 		cluster := &domain.Cluster{
 			ID:     "autostop-c-1",

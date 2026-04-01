@@ -104,14 +104,3 @@ func TestCollector_Collect(t *testing.T) {
 		}
 	})
 }
-
-func TestCollector_MemoryFallback(t *testing.T) {
-	t.Run("given a collector on non-linux, when using memory fallback, then a percentage is returned", func(t *testing.T) {
-		c := NewCollector(slog.Default())
-
-		pct := c.collectMemoryFallback()
-		if pct < 0 || pct > 100 {
-			t.Errorf("memory fallback percent out of range: %f", pct)
-		}
-	})
-}

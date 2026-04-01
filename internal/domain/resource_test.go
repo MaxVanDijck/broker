@@ -18,9 +18,9 @@ func TestResources_InfraString(t *testing.T) {
 	})
 
 	t.Run("given cloud region and zone, when calling InfraString, then all are included", func(t *testing.T) {
-		r := Resources{Cloud: CloudGCP, Region: "us-central1", Zone: "us-central1-a"}
-		if got := r.InfraString(); got != "gcp/us-central1/us-central1-a" {
-			t.Errorf("expected 'gcp/us-central1/us-central1-a', got %q", got)
+		r := Resources{Cloud: CloudAWS, Region: "us-east-1", Zone: "us-east-1a"}
+		if got := r.InfraString(); got != "aws/us-east-1/us-east-1a" {
+			t.Errorf("expected 'aws/us-east-1/us-east-1a', got %q", got)
 		}
 	})
 }

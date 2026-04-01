@@ -13,16 +13,13 @@ import (
 )
 
 func statusCmd() *cobra.Command {
-	var refresh bool
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "status [clusters...]",
 		Short: "Show cluster status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := newClient()
 			resp, err := c.Broker.Status(context.Background(), connect.NewRequest(&brokerpb.StatusRequest{
 				ClusterNames: args,
-				Refresh:      refresh,
 			}))
 			if err != nil {
 				return fmt.Errorf("status failed: %w", err)
@@ -44,8 +41,4 @@ func statusCmd() *cobra.Command {
 			return w.Flush()
 		},
 	}
-
-	cmd.Flags().BoolVarP(&refresh, "refresh", "r", false, "Refresh cluster status from cloud")
-
-	return cmd
 }

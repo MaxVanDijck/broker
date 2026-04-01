@@ -298,6 +298,18 @@ func (s *Server) handleClusterInfoAPI(w http.ResponseWriter, _ *http.Request, cl
 	json.NewEncoder(w).Encode(item)
 }
 
+func (s *Server) handleClusterDeleteAPI(w http.ResponseWriter, _ *http.Request, cluster *domain.Cluster) {
+	s.logger.Info("tearing down cluster via API", "name", cluster.Name, "id", cluster.ID)
+	s.teardownCluster(cluster)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"id":     cluster.ID,
+		"name":   cluster.Name,
+		"status": string(domain.ClusterStatusTerminating),
+	})
+}
+
 func (s *Server) handleClusterOrSSHProxyOrCosts(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/")
 	if path == "" {
@@ -316,11 +328,6 @@ func (s *Server) handleClusterOrSSHProxyOrCosts(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Resolve the path segment as either a cluster UUID or name.
 	cluster, err := s.resolveCluster(nameOrID)
 	if err != nil {
@@ -329,6 +336,17 @@ func (s *Server) handleClusterOrSSHProxyOrCosts(w http.ResponseWriter, r *http.R
 	}
 	if cluster == nil {
 		http.Error(w, fmt.Sprintf("cluster %q not found", nameOrID), http.StatusNotFound)
+		return
+	}
+
+	// DELETE /api/v1/clusters/{id} - teardown by UUID
+	if r.Method == http.MethodDelete && subResource == "" {
+		s.handleClusterDeleteAPI(w, r, cluster)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 

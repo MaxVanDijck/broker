@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
@@ -204,9 +203,4 @@ func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
 
-// compile-time checks
 var _ StateStore = (*PostgresStore)(nil)
-var _ StateStore = (*SQLiteStore)(nil)
-
-// suppress unused import
-var _ = time.Now

@@ -235,7 +235,6 @@ func (a *Agent) handleCancelJob(msg *pb.CancelJob) {
 
 func (a *Agent) handleTerminate(msg *pb.TerminateNode) {
 	a.logger.Info("terminate requested", "reason", msg.Reason, "grace_period", msg.GracePeriodSeconds)
-	// TODO: graceful shutdown -- drain jobs, then exit
 }
 
 func (a *Agent) heartbeatLoop(ctx context.Context, interval time.Duration) {

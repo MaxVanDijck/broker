@@ -18,11 +18,23 @@ func newTestAutostopManager(t *testing.T) (*AutostopManager, *store.SQLiteStore)
 	}
 	t.Cleanup(func() { db.Close() })
 
-	registry := provider.NewRegistry()
-	events := NewEventBus(slog.Default())
 	logger := slog.Default()
+	registry := provider.NewRegistry()
+	events := NewEventBus(logger)
 
-	m := NewAutostopManager(db, registry, events, logger)
+	m := NewAutostopManager(db, logger)
+
+	srv := &Server{
+		store:    db,
+		registry: registry,
+		logger:   logger,
+		events:   events,
+		autostop: m,
+	}
+	m.onTeardown = func(cluster *domain.Cluster) {
+		srv.teardownCluster(cluster)
+	}
+
 	return m, db
 }
 

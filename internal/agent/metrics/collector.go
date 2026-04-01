@@ -42,15 +42,13 @@ func (c *Collector) Collect() (*Snapshot, error) {
 
 	cpu, err := c.collectCPU()
 	if err != nil {
-		c.logger.Warn("failed to collect cpu metrics, using fallback", "error", err)
-		cpu = c.collectCPUFallback()
+		c.logger.Debug("cpu metrics unavailable", "error", err)
 	}
 	snap.CPUPercent = cpu
 
 	mem, err := c.collectMemory()
 	if err != nil {
-		c.logger.Warn("failed to collect memory metrics, using fallback", "error", err)
-		mem = c.collectMemoryFallback()
+		c.logger.Debug("memory metrics unavailable", "error", err)
 	}
 	snap.MemoryPercent = mem
 
@@ -140,29 +138,6 @@ func readProcStat() (idle, total uint64, err error) {
 	return 0, 0, fmt.Errorf("/proc/stat: cpu line not found")
 }
 
-func (c *Collector) collectCPUFallback() float64 {
-	numCPU := runtime.NumCPU()
-	before := new(runtime.MemStats)
-	runtime.ReadMemStats(before)
-	start := time.Now()
-
-	time.Sleep(50 * time.Millisecond)
-
-	after := new(runtime.MemStats)
-	runtime.ReadMemStats(after)
-	elapsed := time.Since(start)
-
-	gcTime := time.Duration(after.PauseTotalNs-before.PauseTotalNs) * time.Nanosecond
-	if elapsed == 0 {
-		return 0
-	}
-	percent := (float64(gcTime) / float64(elapsed)) / float64(numCPU) * 100.0
-	if percent > 100 {
-		percent = 100
-	}
-	return percent
-}
-
 func (c *Collector) collectMemory() (float64, error) {
 	if runtime.GOOS != "linux" {
 		return 0, fmt.Errorf("proc/meminfo not available on %s", runtime.GOOS)
@@ -228,15 +203,6 @@ func parseMemInfoLine(line string) (uint64, error) {
 		return 0, fmt.Errorf("parse meminfo value %q: %w", fields[1], err)
 	}
 	return val * 1024, nil
-}
-
-func (c *Collector) collectMemoryFallback() float64 {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	if m.Sys == 0 {
-		return 0
-	}
-	return float64(m.Alloc) / float64(m.Sys) * 100.0
 }
 
 func (c *Collector) collectDisk() (int64, error) {

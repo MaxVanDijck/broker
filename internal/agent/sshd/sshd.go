@@ -13,13 +13,6 @@ import (
 	gossh "github.com/gliderlabs/ssh"
 )
 
-// TODO: replace with token-based auth validated against the broker server.
-// When auth is implemented, the server will issue short-lived tokens to
-// authenticated users (dashboard session or CLI login). The agent will
-// validate these tokens against the server before accepting the SSH
-// connection. This removes SSH key management entirely -- anyone with
-// a valid broker session can connect.
-
 type Server struct {
 	logger *slog.Logger
 	port   int

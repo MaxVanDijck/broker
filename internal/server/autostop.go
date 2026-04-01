@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"broker/internal/domain"
-	"broker/internal/provider"
 	"broker/internal/store"
 )
 
@@ -22,18 +21,15 @@ type AutostopManager struct {
 	mu       sync.Mutex
 	clusters map[string]*autostopEntry // cluster_id -> entry
 
-	store    store.StateStore
-	registry *provider.Registry
-	events   *EventBus
-	logger   *slog.Logger
+	store      store.StateStore
+	logger     *slog.Logger
+	onTeardown func(cluster *domain.Cluster) // called to initiate cluster teardown
 }
 
-func NewAutostopManager(s store.StateStore, r *provider.Registry, events *EventBus, logger *slog.Logger) *AutostopManager {
+func NewAutostopManager(s store.StateStore, logger *slog.Logger) *AutostopManager {
 	return &AutostopManager{
 		clusters: make(map[string]*autostopEntry),
 		store:    s,
-		registry: r,
-		events:   events,
 		logger:   logger,
 	}
 }
@@ -130,8 +126,6 @@ func (m *AutostopManager) hasRunningJobs(clusterID string) bool {
 }
 
 func (m *AutostopManager) teardown(clusterID string) {
-	m.Remove(clusterID)
-
 	cluster, err := m.store.GetClusterByID(clusterID)
 	if err != nil || cluster == nil {
 		m.logger.Error("autostop: cluster not found for teardown", "cluster_id", clusterID, "error", err)
@@ -142,43 +136,7 @@ func (m *AutostopManager) teardown(clusterID string) {
 		return
 	}
 
-	cluster.Status = domain.ClusterStatusTerminating
-	m.store.UpdateCluster(cluster)
-	m.events.Publish(Event{
-		Type: "cluster_update",
-		Data: map[string]string{
-			"cluster_name": cluster.Name,
-			"cluster_id":   cluster.ID,
-			"status":       string(domain.ClusterStatusTerminating),
-		},
-	})
-
-	clusterName := cluster.Name
-	clusterCloud := cluster.Cloud
-	go func() {
-		if clusterCloud != "" {
-			if prov, ok := m.registry.Get(clusterCloud); ok {
-				c, _ := m.store.GetClusterByID(clusterID)
-				if c != nil {
-					if err := prov.Teardown(context.Background(), c); err != nil {
-						m.logger.Error("autostop: cloud teardown failed", "cluster", clusterName, "error", err)
-					}
-				}
-			}
-		}
-
-		if c, _ := m.store.GetClusterByID(clusterID); c != nil {
-			c.Status = domain.ClusterStatusTerminated
-			m.store.UpdateCluster(c)
-		}
-		m.events.Publish(Event{
-			Type: "cluster_update",
-			Data: map[string]string{
-				"cluster_name": clusterName,
-				"cluster_id":   clusterID,
-				"status":       string(domain.ClusterStatusTerminated),
-			},
-		})
-		m.logger.Info("autostop: cluster terminated", "cluster", clusterName)
-	}()
+	if m.onTeardown != nil {
+		m.onTeardown(cluster)
+	}
 }
