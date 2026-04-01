@@ -37,7 +37,7 @@ const (
 	selfTerminateAfterAgent = "30m"
 
 	amiSSMParameterDefault = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-	amiSSMParameterGPU     = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-ubuntu-22.04/latest/ami-id"
+	amiSSMParameterGPU     = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id"
 )
 
 var acceleratorInstanceTypes = map[string]string{
