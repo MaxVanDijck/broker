@@ -68,6 +68,20 @@ func TestSQLiteStore_CreateCluster(t *testing.T) {
 			t.Fatal("expected error for duplicate cluster name, got nil")
 		}
 	})
+
+	t.Run("given a cluster exists, when creating with the same ID, then it returns an error", func(t *testing.T) {
+		s := newTestStore(t)
+
+		cluster := &domain.Cluster{Name: "cluster-a", ID: "c-dup-id"}
+		if err := s.CreateCluster(cluster); err != nil {
+			t.Fatalf("first CreateCluster: %v", err)
+		}
+
+		dup := &domain.Cluster{Name: "cluster-b", ID: "c-dup-id"}
+		if err := s.CreateCluster(dup); err == nil {
+			t.Fatal("expected error for duplicate cluster ID, got nil")
+		}
+	})
 }
 
 func TestSQLiteStore_GetCluster(t *testing.T) {
@@ -524,6 +538,60 @@ func TestSQLiteStore_JobLifecycle(t *testing.T) {
 		}
 		if got.EndedAt == nil {
 			t.Fatal("expected EndedAt to be set after succeeded")
+		}
+	})
+}
+
+func TestSQLiteStore_ListAllJobs(t *testing.T) {
+	t.Run("given jobs across multiple clusters, when listing all jobs, then all are returned", func(t *testing.T) {
+		s := newTestStore(t)
+
+		jobs := []struct {
+			id        string
+			clusterID string
+		}{
+			{"j-a1", "c-alpha"},
+			{"j-a2", "c-alpha"},
+			{"j-b1", "c-beta"},
+			{"j-g1", "c-gamma"},
+		}
+
+		for _, j := range jobs {
+			job := &domain.Job{ID: j.id, ClusterID: j.clusterID, ClusterName: "cluster", Status: domain.JobStatusPending}
+			if err := s.CreateJob(job); err != nil {
+				t.Fatalf("CreateJob(%s): %v", j.id, err)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		allJobs, err := s.ListAllJobs()
+		if err != nil {
+			t.Fatalf("ListAllJobs: %v", err)
+		}
+		if len(allJobs) != 4 {
+			t.Fatalf("expected 4 jobs across all clusters, got %d", len(allJobs))
+		}
+
+		foundIDs := make(map[string]bool)
+		for _, j := range allJobs {
+			foundIDs[j.ID] = true
+		}
+		for _, j := range jobs {
+			if !foundIDs[j.id] {
+				t.Errorf("expected job %s in ListAllJobs results", j.id)
+			}
+		}
+	})
+
+	t.Run("given no jobs, when listing all jobs, then empty slice is returned", func(t *testing.T) {
+		s := newTestStore(t)
+
+		allJobs, err := s.ListAllJobs()
+		if err != nil {
+			t.Fatalf("ListAllJobs: %v", err)
+		}
+		if len(allJobs) != 0 {
+			t.Errorf("expected 0 jobs, got %d", len(allJobs))
 		}
 	})
 }

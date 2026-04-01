@@ -2,7 +2,7 @@ GOBIN := $(shell go env GOPATH)/bin
 VERSION ?= 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: all build build-server build-cli build-agent dashboard proto test lint fmt clean docs docs-serve
+.PHONY: all build build-server build-cli build-agent dashboard proto test lint fmt clean docs docs-serve update-pricing
 
 all: build
 
@@ -46,6 +46,10 @@ docs:
 
 docs-serve:
 	cd docs && hugo server --buildDrafts
+
+update-pricing:
+	go run scripts/update-pricing.go > internal/provider/aws/pricing_data.go
+	gofmt -s -w internal/provider/aws/pricing_data.go
 
 clean:
 	rm -rf bin/ docs/public/ dashboard/dist internal/dashboard/dist

@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -265,6 +266,82 @@ func TestExecutor_CancelMidExecution(t *testing.T) {
 		last := updates[len(updates)-1]
 		if last.State != pb.JobState_JOB_STATE_CANCELLED {
 			t.Errorf("expected final state CANCELLED, got %s", last.State)
+		}
+	})
+}
+
+func TestExecutor_WorkdirDownloadFails(t *testing.T) {
+	t.Run("given a job with workdir_id and no server, when submitted, then state is FAILED with download error", func(t *testing.T) {
+		updates := make(chan *pb.JobUpdate, 100)
+		logs := make(chan *pb.LogBatch, 1000)
+
+		sink := func(jobID string, batch *pb.LogBatch) {
+			logs <- batch
+		}
+
+		// Point to a server that doesn't exist
+		e := New(slog.Default(), sink, "http://127.0.0.1:1")
+
+		ctx := context.Background()
+
+		var mu sync.Mutex
+		var collected []*pb.JobUpdate
+		done := make(chan struct{})
+
+		updateFn := func(u *pb.JobUpdate) {
+			mu.Lock()
+			collected = append(collected, u)
+			mu.Unlock()
+			select {
+			case updates <- u:
+			default:
+			}
+			if u.State == pb.JobState_JOB_STATE_SUCCEEDED ||
+				u.State == pb.JobState_JOB_STATE_FAILED ||
+				u.State == pb.JobState_JOB_STATE_CANCELLED {
+				close(done)
+			}
+		}
+
+		msg := &pb.SubmitJob{
+			JobId:     "j-workdir-fail",
+			RunScript: "echo should-not-run",
+			WorkdirId: "nonexistent-workdir-id",
+		}
+
+		e.Submit(ctx, msg, updateFn)
+
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for job to complete")
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		if len(collected) < 2 {
+			t.Fatalf("expected at least 2 updates (PULLING, FAILED), got %d", len(collected))
+		}
+
+		if collected[0].State != pb.JobState_JOB_STATE_PULLING {
+			t.Errorf("update[0]: expected PULLING, got %s", collected[0].State)
+		}
+
+		last := collected[len(collected)-1]
+		if last.State != pb.JobState_JOB_STATE_FAILED {
+			t.Errorf("expected final state FAILED, got %s", last.State)
+		}
+		if last.Error == "" {
+			t.Error("expected non-empty error message on workdir download failure")
+		}
+		hasDownloadRef := false
+		lower := strings.ToLower(last.Error)
+		if strings.Contains(lower, "download") {
+			hasDownloadRef = true
+		}
+		if !hasDownloadRef {
+			t.Errorf("expected error to reference 'download', got: %s", last.Error)
 		}
 	})
 }

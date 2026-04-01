@@ -1,4 +1,4 @@
-baseURL: https://broker.dev/
+baseURL: https://maxvandijck.github.io/broker/
 title: broker
 locale: en-us
 
@@ -18,7 +18,7 @@ menu:
       pageRef: /docs
       weight: 1
     - name: GitHub
-      url: https://github.com/MaxVanDijck/broker
+      url: https://github.com/maxvandijck/broker
       weight: 3
       params:
         icon: github
@@ -34,7 +34,7 @@ params:
     displayCopyright: false
   editURL:
     enable: true
-    base: https://github.com/MaxVanDijck/broker/edit/main/docs/content
+    base: https://github.com/maxvandijck/broker/edit/main/docs/content
   theme:
     default: dark
     displayToggle: false
