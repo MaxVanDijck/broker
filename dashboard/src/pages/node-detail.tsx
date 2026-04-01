@@ -31,12 +31,12 @@ function formatBytes(bytes: number): string {
 }
 
 export function NodeDetailPage() {
-  const { name, nodeId } = useParams({ from: "/clusters/$name/nodes/$nodeId" });
+  const { id, nodeId } = useParams({ from: "/clusters/$id/nodes/$nodeId" });
 
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[] }>({
-    queryKey: ["cluster-nodes", name],
+    queryKey: ["cluster-nodes", id],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${name}/nodes`).then((r) => {
+      fetch(`/api/v1/clusters/${id}/nodes`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
@@ -46,12 +46,12 @@ export function NodeDetailPage() {
   const node = nodesData?.nodes?.find((n) => n.node_id === nodeId);
 
   const { data: metricsData } = useQuery<{ points: MetricPoint[] }>({
-    queryKey: ["node-metrics", name, nodeId],
+    queryKey: ["node-metrics", id, nodeId],
     queryFn: () => {
       const now = new Date();
       const from = new Date(now.getTime() - 30 * 60 * 1000);
       return fetch(
-        `/api/v1/clusters/${name}/metrics?from=${from.toISOString()}&to=${now.toISOString()}&node_id=${nodeId}`,
+        `/api/v1/clusters/${id}/metrics?from=${from.toISOString()}&to=${now.toISOString()}&node_id=${nodeId}`,
       ).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
@@ -67,12 +67,12 @@ export function NodeDetailPage() {
     <div>
       <div className="mb-6">
         <Link
-          to="/clusters/$name"
-          params={{ name }}
+          to="/clusters/$id"
+          params={{ id }}
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-300"
         >
           <ArrowLeft className="h-4 w-4" />
-          {name}
+          Back to cluster
         </Link>
         <h1 className="text-xl font-semibold">Node {nodeId}</h1>
         {node && (

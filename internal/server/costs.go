@@ -209,7 +209,7 @@ func (s *Server) handleClusterCostsAPI(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
-	cluster, err := s.store.GetCluster(clusterName)
+	cluster, err := s.resolveCluster(clusterName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -267,15 +267,51 @@ func (s *Server) handleClusterCostsAPI(w http.ResponseWriter, r *http.Request, c
 	json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) resolveCluster(nameOrID string) (*domain.Cluster, error) {
+	c, err := s.store.GetClusterByID(nameOrID)
+	if err != nil {
+		return nil, err
+	}
+	if c != nil {
+		return c, nil
+	}
+	return s.store.GetCluster(nameOrID)
+}
+
+func (s *Server) handleClusterInfoAPI(w http.ResponseWriter, _ *http.Request, cluster *domain.Cluster) {
+	item := clusterListItemJSON{
+		ID:         cluster.ID,
+		Name:       cluster.Name,
+		Status:     string(cluster.Status),
+		Cloud:      string(cluster.Cloud),
+		Region:     cluster.Region,
+		HeadIP:     cluster.HeadIP,
+		NumNodes:   cluster.NumNodes,
+		LaunchedAt: cluster.LaunchedAt.Format(time.RFC3339),
+	}
+	if cluster.Resources != nil {
+		item.Resources = cluster.Resources.String()
+		item.InstanceType = cluster.Resources.InstanceType
+		item.IsSpot = cluster.Resources.UseSpot
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(item)
+}
+
 func (s *Server) handleClusterOrSSHProxyOrCosts(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/")
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 || parts[0] == "" {
+	if path == "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	parts := strings.SplitN(path, "/", 2)
+	nameOrID := parts[0]
+	subResource := ""
+	if len(parts) == 2 {
+		subResource = parts[1]
+	}
 
-	if parts[1] == "ssh" {
+	if subResource == "ssh" {
 		s.handleSSHProxy(w, r)
 		return
 	}
@@ -285,15 +321,26 @@ func (s *Server) handleClusterOrSSHProxyOrCosts(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	clusterName := parts[0]
+	// Resolve the path segment as either a cluster UUID or name.
+	cluster, err := s.resolveCluster(nameOrID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if cluster == nil {
+		http.Error(w, fmt.Sprintf("cluster %q not found", nameOrID), http.StatusNotFound)
+		return
+	}
 
-	switch parts[1] {
+	switch subResource {
+	case "":
+		s.handleClusterInfoAPI(w, r, cluster)
 	case "nodes":
-		s.handleNodesAPI(w, r, clusterName)
+		s.handleNodesAPI(w, r, cluster.Name)
 	case "metrics":
-		s.handleMetricsAPI(w, r, clusterName)
+		s.handleMetricsAPI(w, r, cluster.Name)
 	case "costs":
-		s.handleClusterCostsAPI(w, r, clusterName)
+		s.handleClusterCostsAPI(w, r, cluster.Name)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 	}

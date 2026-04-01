@@ -1,7 +1,6 @@
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, useCallback } from "react";
-import { broker } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { LogViewer } from "@/components/log-viewer";
 import { MetricsChart } from "@/components/metrics-chart";
@@ -14,8 +13,21 @@ import {
   Terminal,
   Monitor,
   ExternalLink,
-  DollarSign,
 } from "lucide-react";
+
+interface ClusterInfo {
+  id: string;
+  name: string;
+  status: string;
+  cloud: string;
+  region: string;
+  resources: string;
+  head_ip: string;
+  num_nodes: number;
+  launched_at: string;
+  instance_type: string;
+  is_spot: boolean;
+}
 
 interface NodeInfo {
   node_id: string;
@@ -44,48 +56,30 @@ function formatBytes(bytes: number): string {
 }
 
 export function ClusterDetailPage() {
-  const { name } = useParams({ from: "/clusters/$name" });
+  const { id } = useParams({ from: "/clusters/$id" });
   const queryClient = useQueryClient();
 
-  const { data: statusData } = useQuery({
-    queryKey: ["cluster", name],
-    queryFn: () => broker.status({ clusterNames: [name] }),
+  const { data: cluster } = useQuery<ClusterInfo>({
+    queryKey: ["cluster", id],
+    queryFn: () =>
+      fetch(`/api/v1/clusters/${id}`).then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      }),
     refetchInterval: 30000,
   });
-
-  const cluster = statusData?.clusters?.[0];
 
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[]; workdir_id?: string }>({
-    queryKey: ["cluster-nodes-header", name],
+    queryKey: ["cluster-nodes", id],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${name}/nodes`).then((r) => {
+      fetch(`/api/v1/clusters/${id}/nodes`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
     refetchInterval: 30000,
   });
 
-  interface CostCluster {
-    cluster_name: string;
-    cluster_id: string;
-    hourly_rate: number;
-    total_cost: number;
-    is_spot: boolean;
-    instance_type: string;
-    status: string;
-  }
-
-  const { data: costData } = useQuery<{ clusters: CostCluster[]; total: number }>({
-    queryKey: ["costs"],
-    queryFn: () =>
-      fetch("/api/v1/costs").then((r) => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.json();
-      }),
-    refetchInterval: 30000,
-  });
-
-  const clusterCost = costData?.clusters?.find((c) => c.cluster_name === name);
+  const clusterName = cluster?.name ?? id.slice(0, 8);
 
   const workdirPath = nodesData?.workdir_id
     ? `/tmp/broker-workdir-${nodesData.workdir_id}`
@@ -102,49 +96,20 @@ export function ClusterDetailPage() {
           Clusters
         </Link>
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{name}</h1>
+          <h1 className="text-xl font-semibold">{clusterName}</h1>
           {cluster && <StatusBadge status={cluster.status} />}
+          <code className="text-xs text-neutral-500" title={id}>{id.slice(0, 8)}</code>
         </div>
       </div>
 
       {cluster ? (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <InfoCard icon={Globe} label="Cloud" value={cluster.cloud || "any"} />
+            <InfoCard icon={Globe} label="Cloud" value={cluster.cloud || "-"} />
             <InfoCard icon={Globe} label="Region" value={cluster.region || "-"} />
             <InfoCard icon={Cpu} label="Resources" value={cluster.resources || "-"} />
-            <InfoCard icon={HardDrive} label="Nodes" value={String(cluster.numNodes)} />
+            <InfoCard icon={HardDrive} label="Nodes" value={String(cluster.num_nodes)} />
           </div>
-
-          {clusterCost && (
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4">
-              <div className="mb-2 flex items-center gap-2 text-neutral-500">
-                <DollarSign className="h-4 w-4" />
-                <span className="text-xs">Cost</span>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-neutral-500">Hourly Rate</span>
-                  <div className="font-mono text-neutral-200">
-                    ${clusterCost.hourly_rate.toFixed(2)}/hr
-                    {clusterCost.is_spot && (
-                      <span className="ml-2 rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] text-blue-400">
-                        spot
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-neutral-500">Total Cost</span>
-                  <div className="font-mono text-neutral-200">${clusterCost.total_cost.toFixed(2)}</div>
-                </div>
-                <div>
-                  <span className="text-neutral-500">Instance Type</span>
-                  <div className="font-mono text-neutral-200">{clusterCost.instance_type}</div>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div>
@@ -154,18 +119,18 @@ export function ClusterDetailPage() {
                   <CopyButton
                     label="SSH"
                     icon={Terminal}
-                    copyText={`broker ssh ${name}`}
+                    copyText={`broker ssh ${clusterName}`}
                     notification="Copied to clipboard"
                   />
-                  <VSCodeButton name={name} workdirPath={workdirPath} />
+                  <VSCodeButton name={clusterName} workdirPath={workdirPath} />
                 </div>
                 <ActionButton
                   label="Tear Down"
                   icon={Server}
                   onClick={async () => {
-                    if (confirm(`Tear down cluster ${name}?`)) {
-                      await broker.down({ clusterName: name });
-                      queryClient.invalidateQueries({ queryKey: ["cluster", name] });
+                    if (confirm(`Tear down cluster ${clusterName}?`)) {
+                      await fetch(`/api/v1/clusters/${id}`, { method: "DELETE" }).catch(() => {});
+                      queryClient.invalidateQueries({ queryKey: ["cluster", id] });
                       queryClient.invalidateQueries({ queryKey: ["clusters"] });
                     }
                   }}
@@ -180,22 +145,22 @@ export function ClusterDetailPage() {
                 <div className="grid grid-cols-2 gap-y-2">
                   <span className="text-neutral-500">Launched</span>
                   <span className="text-neutral-300">
-                    {cluster.launchedAt ? new Date(cluster.launchedAt).toLocaleString() : "-"}
+                    {cluster.launched_at ? new Date(cluster.launched_at).toLocaleString() : "-"}
                   </span>
                   <span className="text-neutral-500">Head IP</span>
-                  <span className="font-mono text-neutral-300">{cluster.headIp || "-"}</span>
+                  <span className="font-mono text-neutral-300">{cluster.head_ip || "-"}</span>
                   <span className="text-neutral-500">SSH</span>
-                  <span className="font-mono text-neutral-300">{name}.broker</span>
+                  <span className="font-mono text-neutral-300">{clusterName}.broker</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <NodesSection clusterName={name} />
+          <NodesSection clusterId={id} />
 
           <div>
             <h2 className="mb-3 text-sm font-medium text-neutral-400">Logs</h2>
-            <LogViewer clusterName={name} />
+            <LogViewer clusterName={clusterName} />
           </div>
         </div>
       ) : (
@@ -205,26 +170,26 @@ export function ClusterDetailPage() {
   );
 }
 
-function NodesSection({ clusterName }: { clusterName: string }) {
+function NodesSection({ clusterId }: { clusterId: string }) {
   const navigate = useNavigate();
 
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[] }>({
-    queryKey: ["cluster-nodes", clusterName],
+    queryKey: ["cluster-nodes", clusterId],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${clusterName}/nodes`).then((r) => {
+      fetch(`/api/v1/clusters/${clusterId}/nodes`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
-    refetchInterval: 30000,
+    refetchInterval: 15000,
   });
 
   const { data: metricsData } = useQuery<{ points: MetricPoint[] }>({
-    queryKey: ["cluster-metrics", clusterName],
+    queryKey: ["cluster-metrics", clusterId],
     queryFn: () => {
       const now = new Date();
       const from = new Date(now.getTime() - 30 * 60 * 1000);
       return fetch(
-        `/api/v1/clusters/${clusterName}/metrics?from=${from.toISOString()}&to=${now.toISOString()}`,
+        `/api/v1/clusters/${clusterId}/metrics?from=${from.toISOString()}&to=${now.toISOString()}`,
       ).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
@@ -265,12 +230,7 @@ function NodesSection({ clusterName }: { clusterName: string }) {
               {nodes.map((node) => (
                 <tr
                   key={node.node_id}
-                  onClick={() =>
-                    navigate({
-                      to: "/clusters/$name/nodes/$nodeId",
-                      params: { name: clusterName, nodeId: node.node_id },
-                    })
-                  }
+                  onClick={() => navigate({ to: "/clusters/$id/nodes/$nodeId", params: { id: clusterId, nodeId: node.node_id } })}
                   className="cursor-pointer transition-colors hover:bg-neutral-900/50"
                 >
                   <td className="px-4 py-3 font-mono text-sm text-white">{node.node_id}</td>
@@ -301,49 +261,17 @@ function NodesSection({ clusterName }: { clusterName: string }) {
 
       {points.length > 0 && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <MetricsChart
-            title="CPU %"
-            points={points}
-            nodeIds={nodeIds}
-            dataKey="cpu_percent"
-            unit="%"
-          />
-          <MetricsChart
-            title="Memory %"
-            points={points}
-            nodeIds={nodeIds}
-            dataKey="memory_percent"
-            unit="%"
-          />
-          <MetricsChart
-            title="GPU Utilization %"
-            points={points}
-            nodeIds={nodeIds}
-            dataKey="gpu_utilization"
-            unit="%"
-          />
-          <MetricsChart
-            title="GPU Memory Used"
-            points={points}
-            nodeIds={nodeIds}
-            dataKey="gpu_memory_used"
-            formatValue={(v: number) => formatBytes(v)}
-          />
+          <MetricsChart title="CPU %" points={points} nodeIds={nodeIds} dataKey="cpu_percent" unit="%" />
+          <MetricsChart title="Memory %" points={points} nodeIds={nodeIds} dataKey="memory_percent" unit="%" />
+          <MetricsChart title="GPU Utilization %" points={points} nodeIds={nodeIds} dataKey="gpu_utilization" unit="%" />
+          <MetricsChart title="GPU Memory Used" points={points} nodeIds={nodeIds} dataKey="gpu_memory_used" formatValue={(v: number) => formatBytes(v)} />
         </div>
       )}
     </div>
   );
 }
 
-function InfoCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) {
+function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4">
       <div className="mb-2 flex items-center gap-2 text-neutral-500">
@@ -355,19 +283,8 @@ function InfoCard({
   );
 }
 
-function CopyButton({
-  label,
-  icon: Icon,
-  copyText,
-  notification,
-}: {
-  label: string;
-  icon: React.ElementType;
-  copyText: string;
-  notification: string;
-}) {
+function CopyButton({ label, icon: Icon, copyText, notification }: { label: string; icon: React.ElementType; copyText: string; notification: string }) {
   const [showNotification, setShowNotification] = useState(false);
-
   const handleClick = useCallback(() => {
     navigator.clipboard.writeText(copyText);
     setShowNotification(true);
@@ -376,37 +293,25 @@ function CopyButton({
 
   return (
     <span className="relative inline-flex items-center gap-2">
-      <button
-        onClick={handleClick}
-        className="flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-700"
-      >
+      <button onClick={handleClick} className="flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-700">
         <Icon className="h-4 w-4" />
         {label}
       </button>
-      {showNotification && (
-        <span className="animate-fade-in whitespace-nowrap text-xs text-green-400">
-          {notification}
-        </span>
-      )}
+      {showNotification && <span className="whitespace-nowrap text-xs text-green-400">{notification}</span>}
     </span>
   );
 }
 
 function VSCodeButton({ name, workdirPath }: { name: string; workdirPath: string }) {
   const vscodeURL = `vscode://vscode-remote/ssh-remote+${name}.broker${workdirPath}`;
-
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
-    // Install SSH config before opening VS Code -- no manual setup needed
     await fetch("/api/v1/ssh-setup", { method: "POST" }).catch(() => {});
     window.location.href = vscodeURL;
   }, [vscodeURL]);
 
   return (
-    <button
-      onClick={handleClick}
-      className="flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-700"
-    >
+    <button onClick={handleClick} className="flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-700">
       <Monitor className="h-4 w-4" />
       Open in VS Code
       <ExternalLink className="h-3 w-3 text-neutral-500" />
@@ -414,23 +319,11 @@ function VSCodeButton({ name, workdirPath }: { name: string; workdirPath: string
   );
 }
 
-function ActionButton({
-  label,
-  icon: Icon,
-  onClick,
-  variant,
-}: {
-  label: string;
-  icon: React.ElementType;
-  onClick: () => void;
-  variant: "default" | "danger";
-}) {
+function ActionButton({ label, icon: Icon, onClick, variant }: { label: string; icon: React.ElementType; onClick: () => void; variant: "default" | "danger" }) {
   const base = "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors";
-  const styles =
-    variant === "danger"
-      ? `${base} bg-red-950/50 text-red-400 border border-red-900 hover:bg-red-950`
-      : `${base} bg-neutral-800 text-neutral-300 hover:bg-neutral-700`;
-
+  const styles = variant === "danger"
+    ? `${base} bg-red-950/50 text-red-400 border border-red-900 hover:bg-red-950`
+    : `${base} bg-neutral-800 text-neutral-300 hover:bg-neutral-700`;
   return (
     <button onClick={onClick} className={styles}>
       <Icon className="h-4 w-4" />

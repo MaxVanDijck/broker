@@ -101,10 +101,12 @@ func (s *Server) Serve(port int) error {
 	mux.HandleFunc("/api/v1/events", s.handleSSE)
 
 	// REST API
+	mux.HandleFunc("/api/v1/clusters", s.handleClustersListAPI)
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
 	mux.HandleFunc("/api/v1/costs", s.handleCostsAPI)
 	mux.HandleFunc("/api/v1/workdir/", s.handleWorkdir)
 	mux.HandleFunc("/api/v1/ssh-setup", s.handleSSHSetup)
+	mux.HandleFunc("/api/v1/clusters", s.handleClustersListAPI)
 	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxyOrCosts)
 
 	// Health check
@@ -964,6 +966,57 @@ func (s *Server) CancelJob(ctx context.Context, req *connect.Request[brokerpb.Ca
 
 // REST API handlers
 
+// resolveCluster looks up a cluster by UUID first, then falls back to name.
+type clusterListItemJSON struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Status       string `json:"status"`
+	Cloud        string `json:"cloud"`
+	Region       string `json:"region"`
+	Resources    string `json:"resources"`
+	HeadIP       string `json:"head_ip"`
+	NumNodes     int    `json:"num_nodes"`
+	LaunchedAt   string `json:"launched_at"`
+	InstanceType string `json:"instance_type,omitempty"`
+	IsSpot       bool   `json:"is_spot,omitempty"`
+}
+
+func (s *Server) handleClustersListAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	clusters, err := s.store.ListClusters()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	items := make([]clusterListItemJSON, 0, len(clusters))
+	for _, c := range clusters {
+		item := clusterListItemJSON{
+			ID:         c.ID,
+			Name:       c.Name,
+			Status:     string(c.Status),
+			Cloud:      string(c.Cloud),
+			Region:     c.Region,
+			HeadIP:     c.HeadIP,
+			NumNodes:   c.NumNodes,
+			LaunchedAt: c.LaunchedAt.Format(time.RFC3339),
+		}
+		if c.Resources != nil {
+			item.Resources = c.Resources.String()
+			item.InstanceType = c.Resources.InstanceType
+			item.IsSpot = c.Resources.UseSpot
+		}
+		items = append(items, item)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"clusters": items})
+}
+
 func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1025,7 +1078,7 @@ type nodesResponse struct {
 func (s *Server) handleNodesAPI(w http.ResponseWriter, _ *http.Request, clusterName string) {
 	// Look up the cluster to get the provisioned public IP (the agent can't
 	// detect its own public IP from inside a VPC).
-	cluster, _ := s.store.GetCluster(clusterName)
+	cluster, _ := s.resolveCluster(clusterName)
 
 	agents := s.Tunnel.ListAgents()
 	nodes := make([]nodeResponseJSON, 0)
@@ -1095,11 +1148,11 @@ func (s *Server) handleMetricsAPI(w http.ResponseWriter, r *http.Request, cluste
 		return
 	}
 
-	// Resolve cluster name to ID for metrics query
+	// Resolve cluster name or ID for metrics query
 	var cluster *domain.Cluster
 	clusterID := ""
 	if s.store != nil {
-		cluster, _ = s.store.GetCluster(clusterName)
+		cluster, _ = s.resolveCluster(clusterName)
 		if cluster != nil {
 			clusterID = cluster.ID
 		}

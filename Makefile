@@ -6,7 +6,7 @@ LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
 all: build
 
-build: build-cli build-server build-agent
+build: dashboard proto build-cli build-server build-agent
 
 build-cli:
 	go build $(LDFLAGS) -o bin/broker ./cmd/broker

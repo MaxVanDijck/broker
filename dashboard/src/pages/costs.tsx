@@ -76,6 +76,7 @@ export function CostsPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-neutral-800 bg-neutral-900/50">
               <tr>
+                <th className="px-4 py-3 font-medium text-neutral-400">ID</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Cluster</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Instance Type</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Hourly Rate</th>
@@ -88,10 +89,13 @@ export function CostsPage() {
                 <tr
                   key={c.cluster_id}
                   onClick={() =>
-                    navigate({ to: "/clusters/$name", params: { name: c.cluster_name } })
+                    navigate({ to: "/clusters/$id", params: { id: c.cluster_id } })
                   }
                   className="cursor-pointer transition-colors hover:bg-neutral-900/50"
                 >
+                  <td className="px-4 py-3">
+                    <code className="text-xs font-medium text-white" title={c.cluster_id}>{c.cluster_id.slice(0, 8)}</code>
+                  </td>
                   <td className="px-4 py-3 font-medium text-white">{c.cluster_name}</td>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-400">
                     {c.instance_type}
@@ -111,7 +115,7 @@ export function CostsPage() {
             </tbody>
             <tfoot className="border-t border-neutral-700 bg-neutral-900/30">
               <tr>
-                <td className="px-4 py-3 font-medium text-neutral-300" colSpan={3}>
+                <td className="px-4 py-3 font-medium text-neutral-300" colSpan={4}>
                   Total
                 </td>
                 <td className="px-4 py-3 font-mono font-medium text-white">

@@ -5,6 +5,7 @@ import { Activity, RefreshCw } from "lucide-react";
 
 interface Job {
   id: string;
+  cluster_id: string;
   cluster_name: string;
   name: string;
   status: string;
@@ -98,8 +99,8 @@ export function JobsPage() {
                   key={j.id}
                   onClick={() =>
                     navigate({
-                      to: "/clusters/$name",
-                      params: { name: j.cluster_name },
+                      to: "/clusters/$id",
+                      params: { id: j.cluster_id },
                     })
                   }
                   className="cursor-pointer transition-colors hover:bg-neutral-900/50"

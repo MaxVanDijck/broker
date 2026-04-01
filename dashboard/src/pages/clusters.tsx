@@ -1,18 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { broker } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { Server, RefreshCw } from "lucide-react";
 
+interface Cluster {
+  id: string;
+  name: string;
+  status: string;
+  cloud: string;
+  region: string;
+  resources: string;
+  head_ip: string;
+  num_nodes: number;
+  launched_at: string;
+  instance_type: string;
+  is_spot: boolean;
+}
+
 interface CostCluster {
-  cluster_name: string;
+  cluster_id: string;
   hourly_rate: number;
+}
+
+function fetchClusters(): Promise<{ clusters: Cluster[] }> {
+  return fetch("/api/v1/clusters").then((r) => {
+    if (!r.ok) throw new Error(`${r.status}`);
+    return r.json();
+  });
 }
 
 export function ClustersPage() {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["clusters"],
-    queryFn: () => broker.status({}),
+    queryFn: fetchClusters,
     refetchInterval: 30000,
   });
 
@@ -26,8 +46,8 @@ export function ClustersPage() {
     refetchInterval: 30000,
   });
 
-  const costByName = new Map(
-    (costData?.clusters ?? []).map((c) => [c.cluster_name, c.hourly_rate]),
+  const costById = new Map(
+    (costData?.clusters ?? []).map((c) => [c.cluster_id, c]),
   );
 
   const navigate = useNavigate();
@@ -62,6 +82,7 @@ export function ClustersPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-neutral-800 bg-neutral-900/50">
               <tr>
+                <th className="px-4 py-3 font-medium text-neutral-400">ID</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Name</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Status</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Cloud</th>
@@ -75,10 +96,15 @@ export function ClustersPage() {
             <tbody className="divide-y divide-neutral-800">
               {clusters.map((c) => (
                 <tr
-                  key={c.name}
-                  onClick={() => navigate({ to: "/clusters/$name", params: { name: c.name } })}
+                  key={c.id}
+                  onClick={() => navigate({ to: "/clusters/$id", params: { id: c.id } })}
                   className="cursor-pointer transition-colors hover:bg-neutral-900/50"
                 >
+                  <td className="px-4 py-3">
+                    <code className="text-xs font-medium text-white" title={c.id}>
+                      {c.id.slice(0, 8)}
+                    </code>
+                  </td>
                   <td className="px-4 py-3 font-medium text-white">{c.name}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={c.status} />
@@ -88,12 +114,12 @@ export function ClustersPage() {
                   <td className="px-4 py-3 text-neutral-400">
                     <code className="text-xs">{c.resources || "-"}</code>
                   </td>
-                  <td className="px-4 py-3 text-neutral-400">{c.numNodes}</td>
+                  <td className="px-4 py-3 text-neutral-400">{c.num_nodes}</td>
                   <td className="px-4 py-3 font-mono text-neutral-400">
-                    {costByName.has(c.name) ? `$${costByName.get(c.name)!.toFixed(2)}/hr` : "-"}
+                    {costById.has(c.id) ? `$${costById.get(c.id)!.hourly_rate.toFixed(2)}/hr` : "-"}
                   </td>
                   <td className="px-4 py-3 text-neutral-400 text-xs">
-                    {c.launchedAt ? new Date(c.launchedAt).toLocaleString() : "-"}
+                    {c.launched_at ? new Date(c.launched_at).toLocaleString() : "-"}
                   </td>
                 </tr>
               ))}

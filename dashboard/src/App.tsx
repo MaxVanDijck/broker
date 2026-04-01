@@ -25,13 +25,13 @@ const indexRoute = createRoute({
 
 const clusterDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/clusters/$name",
+  path: "/clusters/$id",
   component: ClusterDetailPage,
 });
 
 const nodeDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/clusters/$name/nodes/$nodeId",
+  path: "/clusters/$id/nodes/$nodeId",
   component: NodeDetailPage,
 });
 
