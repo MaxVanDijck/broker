@@ -102,12 +102,11 @@ func (s *Server) Serve(port int) error {
 
 	// REST API
 	mux.HandleFunc("/api/v1/clusters", s.handleClustersListAPI)
+	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxyOrCosts)
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
 	mux.HandleFunc("/api/v1/costs", s.handleCostsAPI)
 	mux.HandleFunc("/api/v1/workdir/", s.handleWorkdir)
 	mux.HandleFunc("/api/v1/ssh-setup", s.handleSSHSetup)
-	mux.HandleFunc("/api/v1/clusters", s.handleClustersListAPI)
-	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxyOrCosts)
 
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

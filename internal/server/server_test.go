@@ -617,7 +617,12 @@ func TestHandleClusterMetrics(t *testing.T) {
 
 	t.Run("given no metrics exist, when querying, then empty points array is returned", func(t *testing.T) {
 		analytics := &stubAnalyticsStore{}
+		ss, _ := store.NewSQLite(":memory:")
+		defer ss.Close()
+		ss.CreateCluster(&domain.Cluster{ID: "empty-id", Name: "empty-cluster", Status: domain.ClusterStatusUp})
+
 		srv := &Server{
+			store:     ss,
 			analytics: analytics,
 			logger:    slog.Default(),
 		}
@@ -713,7 +718,12 @@ func TestHandleClusterMetrics(t *testing.T) {
 
 	t.Run("given invalid path, when requesting, then 404 is returned", func(t *testing.T) {
 		analytics := &stubAnalyticsStore{}
+		ss2, _ := store.NewSQLite(":memory:")
+		defer ss2.Close()
+		ss2.CreateCluster(&domain.Cluster{ID: "tc-id", Name: "test-cluster", Status: domain.ClusterStatusUp})
+
 		srv := &Server{
+			store:     ss2,
 			analytics: analytics,
 			logger:    slog.Default(),
 		}
@@ -736,7 +746,12 @@ func TestHandleClusterMetrics(t *testing.T) {
 	})
 
 	t.Run("given no analytics store, when requesting metrics, then empty points are returned", func(t *testing.T) {
+		ss3, _ := store.NewSQLite(":memory:")
+		defer ss3.Close()
+		ss3.CreateCluster(&domain.Cluster{ID: "tc-id2", Name: "test-cluster", Status: domain.ClusterStatusUp})
+
 		srv := &Server{
+			store:     ss3,
 			analytics: nil,
 			logger:    slog.Default(),
 		}
