@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -23,12 +24,16 @@ func serverAddr() string {
 	return defaultAddr
 }
 
+func brokerToken() string {
+	return os.Getenv("BROKER_TOKEN")
+}
+
 func newClient() *client.Client {
 	ensureServer()
 	if !sshConfigInstalled() {
 		installSSHConfig()
 	}
-	return client.New(serverAddr())
+	return client.New(serverAddr(), brokerToken())
 }
 
 func Root() *cobra.Command {
@@ -124,7 +129,14 @@ func ensureServer() {
 }
 
 func serverIsUp(addr string) bool {
-	resp, err := http.Get(addr + "/healthz")
+	req, err := http.NewRequest(http.MethodGet, addr+"/healthz", nil)
+	if err != nil {
+		return false
+	}
+	if token := brokerToken(); token != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
 	}
@@ -133,7 +145,14 @@ func serverIsUp(addr string) bool {
 }
 
 func serverIsReady(addr string) bool {
-	resp, err := http.Get(addr + "/readyz")
+	req, err := http.NewRequest(http.MethodGet, addr+"/readyz", nil)
+	if err != nil {
+		return false
+	}
+	if token := brokerToken(); token != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
 	}

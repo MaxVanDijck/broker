@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -122,7 +124,14 @@ func (a *Agent) connect(ctx context.Context) error {
 	url := fmt.Sprintf("%s/agent/v1/connect", a.cfg.ServerURL)
 	a.logger.Info("connecting to server", "url", url)
 
-	conn, _, err := websocket.Dial(ctx, url, nil)
+	dialOpts := &websocket.DialOptions{}
+	if a.cfg.Token != "" {
+		headers := http.Header{}
+		headers.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+a.cfg.Token)))
+		dialOpts.HTTPHeader = headers
+	}
+
+	conn, _, err := websocket.Dial(ctx, url, dialOpts)
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}

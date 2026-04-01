@@ -559,6 +559,11 @@ func generateUserData(serverURL, clusterName, nodeID, token string) string {
 		wsBase = "wss://" + wsBase
 	}
 
+	curlAuth := ""
+	if token != "" {
+		curlAuth = fmt.Sprintf(` -u "broker:%s"`, token)
+	}
+
 	return fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
 
@@ -569,7 +574,7 @@ set -euo pipefail
 
 MAX_RETRIES=10
 for i in $(seq 1 $MAX_RETRIES); do
-  curl -fsSL -o /usr/local/bin/broker-agent "%s" && break
+  curl -fsSL%s -o /usr/local/bin/broker-agent "%s" && break
   echo "download attempt $i failed, retrying in 10s..."
   sleep 10
 done
@@ -599,7 +604,7 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now broker-agent.service
-`, binaryURL, wsBase, clusterName, token, nodeID, selfTerminateAfterAgent)
+`, curlAuth, binaryURL, wsBase, clusterName, token, nodeID, selfTerminateAfterAgent)
 }
 
 func nonTerminatedFilter() ec2types.Filter {

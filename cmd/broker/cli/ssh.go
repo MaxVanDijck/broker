@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -98,7 +100,14 @@ func runStdioProxy(clusterName string) error {
 	url := fmt.Sprintf("%s/api/v1/clusters/%s/ssh", wsURL, clusterName)
 
 	ctx := context.Background()
-	conn, _, err := websocket.Dial(ctx, url, nil)
+	dialOpts := &websocket.DialOptions{}
+	if token := brokerToken(); token != "" {
+		headers := http.Header{}
+		headers.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
+		dialOpts.HTTPHeader = headers
+	}
+
+	conn, _, err := websocket.Dial(ctx, url, dialOpts)
 	if err != nil {
 		return fmt.Errorf("failed to connect to ssh proxy: %w", err)
 	}
