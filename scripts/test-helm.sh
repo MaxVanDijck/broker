@@ -67,7 +67,7 @@ echo " OK"
 kill $PF_PID 2>/dev/null || true
 
 echo "=== running helm test ==="
-helm test broker
+helm test broker --timeout 60s
 
 echo ""
 echo "=== all tests passed ==="
