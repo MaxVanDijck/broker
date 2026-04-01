@@ -7,33 +7,30 @@ next: /docs/getting-started/quickstart
 ## From source
 
 ```bash
-git clone https://github.com/broker-dev/broker.git
+git clone https://github.com/MaxVanDijck/broker.git
 cd broker
 make build
 ```
 
-This produces three binaries in `bin/`:
+This produces a single binary:
 
 ```
-bin/broker         # CLI
-bin/broker-server  # Server (includes embedded dashboard)
-bin/broker-agent   # Agent
+bin/broker         # CLI + embedded server
+```
+
+The CLI auto-starts the server as a background process on first use. No separate `broker-server` process is needed for local development.
+
+For production deployments, the server can also be built separately:
+
+```bash
+make build-server  # bin/broker-server
+make build-agent   # bin/broker-agent
 ```
 
 ## Go install
 
 ```bash
-go install github.com/broker-dev/broker/cmd/broker@latest
-go install github.com/broker-dev/broker/cmd/broker-server@latest
-go install github.com/broker-dev/broker/cmd/broker-agent@latest
-```
-
-## Cross-compilation
-
-The agent is typically deployed to Linux AMD64 nodes:
-
-```bash
-GOOS=linux GOARCH=amd64 go build -o bin/broker-agent-linux-amd64 ./cmd/broker-agent
+go install github.com/MaxVanDijck/broker/cmd/broker@latest
 ```
 
 ## Verify installation

@@ -85,6 +85,9 @@ func (s *Server) handleSSHProxy(w http.ResponseWriter, r *http.Request) {
 		cancel: cancel,
 	}
 	s.sshSessions.add(sess)
+	if ac.ClusterID != "" {
+		s.autostop.Touch(ac.ClusterID)
+	}
 
 	s.logger.Info("ssh proxy session started", "session_id", sessionID, "cluster", clusterName, "node", ac.NodeID)
 
@@ -147,6 +150,8 @@ func (s *Server) onSSHSessionData(sessionID string, data []byte, closed bool) {
 	}
 
 	if len(data) > 0 {
-		sess.conn.Write(sess.ctx, ws.MessageBinary, data)
+		if err := sess.conn.Write(sess.ctx, ws.MessageBinary, data); err != nil {
+			sess.cancel()
+		}
 	}
 }

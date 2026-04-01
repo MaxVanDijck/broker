@@ -84,13 +84,47 @@ func TestSQLiteStore_GetCluster(t *testing.T) {
 	})
 }
 
+func TestSQLiteStore_GetClusterByID(t *testing.T) {
+	t.Run("given a cluster exists, when getting by ID, then it is returned", func(t *testing.T) {
+		s := newTestStore(t)
+
+		cluster := &domain.Cluster{ID: "c-1", Name: "test-cluster", Status: domain.ClusterStatusUp}
+		if err := s.CreateCluster(cluster); err != nil {
+			t.Fatalf("CreateCluster: %v", err)
+		}
+
+		got, err := s.GetClusterByID("c-1")
+		if err != nil {
+			t.Fatalf("GetClusterByID: %v", err)
+		}
+		if got == nil {
+			t.Fatal("expected cluster, got nil")
+		}
+		if got.Name != "test-cluster" {
+			t.Errorf("expected name test-cluster, got %s", got.Name)
+		}
+	})
+
+	t.Run("given no clusters exist, when getting by ID, then nil is returned", func(t *testing.T) {
+		s := newTestStore(t)
+
+		got, err := s.GetClusterByID("nonexistent")
+		if err != nil {
+			t.Fatalf("GetClusterByID: %v", err)
+		}
+		if got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+}
+
 func TestSQLiteStore_ListClusters(t *testing.T) {
 	t.Run("given multiple clusters, when listing, then all are returned", func(t *testing.T) {
 		s := newTestStore(t)
 
 		names := []string{"alpha", "beta", "gamma"}
 		for _, name := range names {
-			c := &domain.Cluster{Name: name, ID: name}
+			c := &domain.Cluster{Name: name, ID: "id-" + name}
 			if err := s.CreateCluster(c); err != nil {
 				t.Fatalf("CreateCluster(%s): %v", name, err)
 			}
@@ -161,7 +195,7 @@ func TestSQLiteStore_UpdateCluster(t *testing.T) {
 }
 
 func TestSQLiteStore_DeleteCluster(t *testing.T) {
-	t.Run("given an existing cluster, when deleted, then it is no longer retrievable", func(t *testing.T) {
+	t.Run("given an existing cluster, when deleted by ID, then it is no longer retrievable", func(t *testing.T) {
 		s := newTestStore(t)
 
 		cluster := &domain.Cluster{Name: "delete-me", ID: "c-1"}
@@ -169,7 +203,7 @@ func TestSQLiteStore_DeleteCluster(t *testing.T) {
 			t.Fatalf("CreateCluster: %v", err)
 		}
 
-		if err := s.DeleteCluster("delete-me"); err != nil {
+		if err := s.DeleteCluster("c-1"); err != nil {
 			t.Fatalf("DeleteCluster: %v", err)
 		}
 
@@ -198,6 +232,7 @@ func TestSQLiteStore_CreateJob(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Second)
 		job := &domain.Job{
 			ID:          "j-1",
+			ClusterID:   "c-1",
 			ClusterName: "cluster-a",
 			Name:        "train",
 			Status:      domain.JobStatusPending,
@@ -219,8 +254,11 @@ func TestSQLiteStore_CreateJob(t *testing.T) {
 		if got.Name != "train" {
 			t.Errorf("expected name train, got %s", got.Name)
 		}
+		if got.ClusterID != "c-1" {
+			t.Errorf("expected cluster_id c-1, got %s", got.ClusterID)
+		}
 		if got.ClusterName != "cluster-a" {
-			t.Errorf("expected cluster cluster-a, got %s", got.ClusterName)
+			t.Errorf("expected cluster_name cluster-a, got %s", got.ClusterName)
 		}
 		if got.Status != domain.JobStatusPending {
 			t.Errorf("expected status PENDING, got %s", got.Status)
@@ -243,42 +281,42 @@ func TestSQLiteStore_GetJob(t *testing.T) {
 }
 
 func TestSQLiteStore_ListJobs(t *testing.T) {
-	t.Run("given jobs in multiple clusters, when listing by cluster, then only matching jobs are returned", func(t *testing.T) {
+	t.Run("given jobs in multiple clusters, when listing by cluster ID, then only matching jobs are returned", func(t *testing.T) {
 		s := newTestStore(t)
 
 		for i, name := range []string{"j-1", "j-2", "j-3"} {
-			cluster := "cluster-a"
+			clusterID := "c-a"
 			if i == 2 {
-				cluster = "cluster-b"
+				clusterID = "c-b"
 			}
-			job := &domain.Job{ID: name, ClusterName: cluster, Status: domain.JobStatusPending}
+			job := &domain.Job{ID: name, ClusterID: clusterID, ClusterName: "cluster", Status: domain.JobStatusPending}
 			if err := s.CreateJob(job); err != nil {
 				t.Fatalf("CreateJob(%s): %v", name, err)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
 
-		jobs, err := s.ListJobs("cluster-a")
+		jobs, err := s.ListJobs("c-a")
 		if err != nil {
 			t.Fatalf("ListJobs: %v", err)
 		}
 		if len(jobs) != 2 {
-			t.Fatalf("expected 2 jobs for cluster-a, got %d", len(jobs))
+			t.Fatalf("expected 2 jobs for c-a, got %d", len(jobs))
 		}
 
-		jobsB, err := s.ListJobs("cluster-b")
+		jobsB, err := s.ListJobs("c-b")
 		if err != nil {
 			t.Fatalf("ListJobs: %v", err)
 		}
 		if len(jobsB) != 1 {
-			t.Fatalf("expected 1 job for cluster-b, got %d", len(jobsB))
+			t.Fatalf("expected 1 job for c-b, got %d", len(jobsB))
 		}
 	})
 
 	t.Run("given no jobs for a cluster, when listing, then empty slice is returned", func(t *testing.T) {
 		s := newTestStore(t)
 
-		jobs, err := s.ListJobs("empty-cluster")
+		jobs, err := s.ListJobs("empty-cluster-id")
 		if err != nil {
 			t.Fatalf("ListJobs: %v", err)
 		}
@@ -294,6 +332,7 @@ func TestSQLiteStore_UpdateJob(t *testing.T) {
 
 		job := &domain.Job{
 			ID:          "j-1",
+			ClusterID:   "c-1",
 			ClusterName: "cluster-a",
 			Status:      domain.JobStatusPending,
 		}
@@ -356,6 +395,18 @@ func TestSQLiteStore_ClusterLifecycle(t *testing.T) {
 			t.Errorf("expected 4 nodes, got %d", got.NumNodes)
 		}
 
+		// Also test GetClusterByID
+		gotByID, err := s.GetClusterByID("c-lifecycle")
+		if err != nil {
+			t.Fatalf("GetClusterByID after create: %v", err)
+		}
+		if gotByID == nil {
+			t.Fatal("expected cluster by ID, got nil")
+		}
+		if gotByID.Name != "lifecycle-cluster" {
+			t.Errorf("expected name lifecycle-cluster, got %s", gotByID.Name)
+		}
+
 		cluster.Status = domain.ClusterStatusUp
 		cluster.HeadIP = "10.128.0.2"
 		if err := s.UpdateCluster(cluster); err != nil {
@@ -384,7 +435,7 @@ func TestSQLiteStore_ClusterLifecycle(t *testing.T) {
 			t.Errorf("expected lifecycle-cluster in list, got %s", clusters[0].Name)
 		}
 
-		if err := s.DeleteCluster("lifecycle-cluster"); err != nil {
+		if err := s.DeleteCluster("c-lifecycle"); err != nil {
 			t.Fatalf("DeleteCluster: %v", err)
 		}
 
@@ -413,6 +464,7 @@ func TestSQLiteStore_JobLifecycle(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Second)
 		job := &domain.Job{
 			ID:          "j-lifecycle",
+			ClusterID:   "c-x",
 			ClusterName: "cluster-x",
 			Name:        "training-run",
 			Status:      domain.JobStatusPending,
@@ -424,7 +476,7 @@ func TestSQLiteStore_JobLifecycle(t *testing.T) {
 			t.Fatalf("CreateJob: %v", err)
 		}
 
-		jobs, err := s.ListJobs("cluster-x")
+		jobs, err := s.ListJobs("c-x")
 		if err != nil {
 			t.Fatalf("ListJobs after create: %v", err)
 		}
@@ -484,52 +536,52 @@ func TestSQLiteStore_JobClusterIsolation(t *testing.T) {
 		clusterBJobs := []string{"b-1", "b-2"}
 
 		for _, id := range clusterAJobs {
-			j := &domain.Job{ID: id, ClusterName: "cluster-alpha", Name: "job-" + id, Status: domain.JobStatusPending}
+			j := &domain.Job{ID: id, ClusterID: "c-alpha", ClusterName: "cluster-alpha", Name: "job-" + id, Status: domain.JobStatusPending}
 			if err := s.CreateJob(j); err != nil {
 				t.Fatalf("CreateJob(%s): %v", id, err)
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
 		for _, id := range clusterBJobs {
-			j := &domain.Job{ID: id, ClusterName: "cluster-beta", Name: "job-" + id, Status: domain.JobStatusRunning}
+			j := &domain.Job{ID: id, ClusterID: "c-beta", ClusterName: "cluster-beta", Name: "job-" + id, Status: domain.JobStatusRunning}
 			if err := s.CreateJob(j); err != nil {
 				t.Fatalf("CreateJob(%s): %v", id, err)
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
 
-		jobsA, err := s.ListJobs("cluster-alpha")
+		jobsA, err := s.ListJobs("c-alpha")
 		if err != nil {
-			t.Fatalf("ListJobs(cluster-alpha): %v", err)
+			t.Fatalf("ListJobs(c-alpha): %v", err)
 		}
 		if len(jobsA) != 3 {
-			t.Fatalf("expected 3 jobs for cluster-alpha, got %d", len(jobsA))
+			t.Fatalf("expected 3 jobs for c-alpha, got %d", len(jobsA))
 		}
 		for _, j := range jobsA {
-			if j.ClusterName != "cluster-alpha" {
-				t.Errorf("job %s has cluster %s, expected cluster-alpha", j.ID, j.ClusterName)
+			if j.ClusterID != "c-alpha" {
+				t.Errorf("job %s has cluster_id %s, expected c-alpha", j.ID, j.ClusterID)
 			}
 		}
 
-		jobsB, err := s.ListJobs("cluster-beta")
+		jobsB, err := s.ListJobs("c-beta")
 		if err != nil {
-			t.Fatalf("ListJobs(cluster-beta): %v", err)
+			t.Fatalf("ListJobs(c-beta): %v", err)
 		}
 		if len(jobsB) != 2 {
-			t.Fatalf("expected 2 jobs for cluster-beta, got %d", len(jobsB))
+			t.Fatalf("expected 2 jobs for c-beta, got %d", len(jobsB))
 		}
 		for _, j := range jobsB {
-			if j.ClusterName != "cluster-beta" {
-				t.Errorf("job %s has cluster %s, expected cluster-beta", j.ID, j.ClusterName)
+			if j.ClusterID != "c-beta" {
+				t.Errorf("job %s has cluster_id %s, expected c-beta", j.ID, j.ClusterID)
 			}
 			if j.Status != domain.JobStatusRunning {
 				t.Errorf("job %s has status %s, expected RUNNING", j.ID, j.Status)
 			}
 		}
 
-		jobsC, err := s.ListJobs("cluster-nonexistent")
+		jobsC, err := s.ListJobs("c-nonexistent")
 		if err != nil {
-			t.Fatalf("ListJobs(cluster-nonexistent): %v", err)
+			t.Fatalf("ListJobs(c-nonexistent): %v", err)
 		}
 		if len(jobsC) != 0 {
 			t.Errorf("expected 0 jobs for nonexistent cluster, got %d", len(jobsC))

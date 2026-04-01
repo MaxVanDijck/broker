@@ -108,6 +108,15 @@ func (a *Agent) handleSSHSessionData(ctx context.Context, msg *pb.SSHSessionData
 
 	// Forward data from tunnel to local SSH server
 	if len(msg.Data) > 0 {
-		conn.Write(msg.Data)
+		if _, err := conn.Write(msg.Data); err != nil {
+			a.logger.Warn("ssh relay: write to local sshd failed", "session_id", sessionID, "error", err)
+			a.sshRelays.remove(sessionID)
+			a.tun.Send(ctx, &pb.Envelope{
+				Payload: &pb.Envelope_SshSession{SshSession: &pb.SSHSession{
+					SessionId: sessionID,
+					Closed:    true,
+				}},
+			})
+		}
 	}
 }

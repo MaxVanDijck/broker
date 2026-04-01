@@ -210,9 +210,11 @@ func (a *Agent) handleSubmitJob(ctx context.Context, msg *pb.SubmitJob) {
 
 	a.exec.Submit(ctx, msg, func(update *pb.JobUpdate) {
 		a.logger.Info("job state changed", "job_id", update.JobId, "state", update.State)
-		a.tun.Send(ctx, &pb.Envelope{
+		if err := a.tun.Send(ctx, &pb.Envelope{
 			Payload: &pb.Envelope_JobUpdate{JobUpdate: update},
-		})
+		}); err != nil {
+			a.logger.Warn("failed to send job update", "job_id", update.JobId, "error", err)
+		}
 	})
 }
 
@@ -256,9 +258,11 @@ func (a *Agent) heartbeatLoop(ctx context.Context, interval time.Duration) {
 				}
 			}
 
-			a.tun.Send(ctx, &pb.Envelope{
+			if err := a.tun.Send(ctx, &pb.Envelope{
 				Payload: &pb.Envelope_Heartbeat{Heartbeat: hb},
-			})
+			}); err != nil {
+				a.logger.Warn("failed to send heartbeat", "error", err)
+			}
 		case <-ctx.Done():
 			return
 		}
@@ -269,9 +273,11 @@ func (a *Agent) sendLogBatch(jobID string, batch *pb.LogBatch) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	a.tun.Send(ctx, &pb.Envelope{
+	if err := a.tun.Send(ctx, &pb.Envelope{
 		Payload: &pb.Envelope_LogBatch{LogBatch: batch},
-	})
+	}); err != nil {
+		a.logger.Warn("failed to send log batch", "job_id", jobID, "error", err)
+	}
 }
 
 func (a *Agent) collectNodeInfo() *pb.NodeInfo {

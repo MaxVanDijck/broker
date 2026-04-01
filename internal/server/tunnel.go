@@ -15,6 +15,7 @@ import (
 
 type AgentConnection struct {
 	NodeID      string
+	ClusterID   string
 	ClusterName string
 	Tunnel      *tunnel.Tunnel
 	Info        *pb.NodeInfo
@@ -29,7 +30,7 @@ type TunnelHandler struct {
 
 	onRegister   func(conn *AgentConnection)
 	onHeartbeat  func(nodeID, clusterName string, hb *pb.Heartbeat)
-	onLogBatch   func(jobID string, batch *pb.LogBatch)
+	onLogBatch   func(clusterName, jobID string, batch *pb.LogBatch)
 	onJobUpdate  func(jobID string, update *pb.JobUpdate)
 	onSSHSession func(sessionID string, data []byte, closed bool)
 	onDisconnect func(conn *AgentConnection)
@@ -45,7 +46,7 @@ func NewTunnelHandler(logger *slog.Logger) *TunnelHandler {
 func (h *TunnelHandler) SetCallbacks(
 	onRegister func(*AgentConnection),
 	onHeartbeat func(string, string, *pb.Heartbeat),
-	onLogBatch func(string, *pb.LogBatch),
+	onLogBatch func(string, string, *pb.LogBatch),
 	onJobUpdate func(string, *pb.JobUpdate),
 	onSSHSession func(string, []byte, bool),
 	onDisconnect func(*AgentConnection),
@@ -152,7 +153,7 @@ func (h *TunnelHandler) readLoop(ctx context.Context, ac *AgentConnection) {
 			}
 		case *pb.Envelope_LogBatch:
 			if h.onLogBatch != nil {
-				h.onLogBatch(p.LogBatch.JobId, p.LogBatch)
+				h.onLogBatch(ac.ClusterName, p.LogBatch.JobId, p.LogBatch)
 			}
 		case *pb.Envelope_JobUpdate:
 			if h.onJobUpdate != nil {
@@ -180,6 +181,17 @@ func (h *TunnelHandler) GetAgentByCluster(clusterName string) (*AgentConnection,
 	defer h.mu.RUnlock()
 	for _, ac := range h.agents {
 		if ac.ClusterName == clusterName {
+			return ac, true
+		}
+	}
+	return nil, false
+}
+
+func (h *TunnelHandler) GetAgentByClusterID(clusterID string) (*AgentConnection, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, ac := range h.agents {
+		if ac.ClusterID == clusterID {
 			return ac, true
 		}
 	}

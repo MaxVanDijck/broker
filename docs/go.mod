@@ -1,4 +1,4 @@
-module github.com/broker-dev/broker/docs
+module github.com/MaxVanDijck/broker/docs
 
 go 1.25.4
 

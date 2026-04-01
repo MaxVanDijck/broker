@@ -48,7 +48,7 @@ func (s *ClickHouseStore) migrate(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS metrics (
 			timestamp DateTime64(3),
 			node_id String,
-			cluster_name String,
+			cluster_id String,
 			cpu_percent Float64,
 			memory_percent Float64,
 			disk_used_bytes Int64,
@@ -61,7 +61,7 @@ func (s *ClickHouseStore) migrate(ctx context.Context) error {
 
 		`CREATE TABLE IF NOT EXISTS costs (
 			timestamp DateTime64(3),
-			cluster_name String,
+			cluster_id String,
 			cloud String,
 			region String,
 			instance_type String,
@@ -69,7 +69,7 @@ func (s *ClickHouseStore) migrate(ctx context.Context) error {
 			hourly_cost Float64,
 			is_spot UInt8
 		) ENGINE = MergeTree()
-		ORDER BY (cluster_name, timestamp)`,
+		ORDER BY (cluster_id, timestamp)`,
 	}
 
 	for _, q := range queries {
@@ -136,7 +136,7 @@ func (s *ClickHouseStore) InsertMetrics(ctx context.Context, points []MetricPoin
 
 	for _, p := range points {
 		if err := batch.Append(
-			p.Timestamp, p.NodeID, p.ClusterName,
+			p.Timestamp, p.NodeID, p.ClusterID,
 			p.CPUPercent, p.MemoryPercent, p.DiskUsedBytes,
 			p.GPUIndex, p.GPUUtilization, p.GPUMemoryUsed, p.GPUTemperature,
 		); err != nil {
@@ -149,7 +149,7 @@ func (s *ClickHouseStore) InsertMetrics(ctx context.Context, points []MetricPoin
 
 func (s *ClickHouseStore) QueryMetrics(ctx context.Context, nodeID string, tr TimeRange) ([]MetricPoint, error) {
 	rows, err := s.conn.Query(ctx,
-		`SELECT timestamp, node_id, cluster_name, cpu_percent, memory_percent,
+		`SELECT timestamp, node_id, cluster_id, cpu_percent, memory_percent,
 		        disk_used_bytes, gpu_index, gpu_utilization, gpu_memory_used, gpu_temperature
 		 FROM metrics
 		 WHERE node_id = $1 AND timestamp >= $2 AND timestamp <= $3
@@ -165,7 +165,7 @@ func (s *ClickHouseStore) QueryMetrics(ctx context.Context, nodeID string, tr Ti
 	for rows.Next() {
 		var p MetricPoint
 		if err := rows.Scan(
-			&p.Timestamp, &p.NodeID, &p.ClusterName,
+			&p.Timestamp, &p.NodeID, &p.ClusterID,
 			&p.CPUPercent, &p.MemoryPercent, &p.DiskUsedBytes,
 			&p.GPUIndex, &p.GPUUtilization, &p.GPUMemoryUsed, &p.GPUTemperature,
 		); err != nil {
@@ -176,14 +176,14 @@ func (s *ClickHouseStore) QueryMetrics(ctx context.Context, nodeID string, tr Ti
 	return points, rows.Err()
 }
 
-func (s *ClickHouseStore) QueryMetricsByCluster(ctx context.Context, clusterName string, tr TimeRange) ([]MetricPoint, error) {
+func (s *ClickHouseStore) QueryMetricsByCluster(ctx context.Context, clusterID string, tr TimeRange) ([]MetricPoint, error) {
 	rows, err := s.conn.Query(ctx,
-		`SELECT timestamp, node_id, cluster_name, cpu_percent, memory_percent,
+		`SELECT timestamp, node_id, cluster_id, cpu_percent, memory_percent,
 		        disk_used_bytes, gpu_index, gpu_utilization, gpu_memory_used, gpu_temperature
 		 FROM metrics
-		 WHERE cluster_name = $1 AND timestamp >= $2 AND timestamp <= $3
+		 WHERE cluster_id = $1 AND timestamp >= $2 AND timestamp <= $3
 		 ORDER BY timestamp ASC`,
-		clusterName, tr.From, tr.To,
+		clusterID, tr.From, tr.To,
 	)
 	if err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ func (s *ClickHouseStore) QueryMetricsByCluster(ctx context.Context, clusterName
 	for rows.Next() {
 		var p MetricPoint
 		if err := rows.Scan(
-			&p.Timestamp, &p.NodeID, &p.ClusterName,
+			&p.Timestamp, &p.NodeID, &p.ClusterID,
 			&p.CPUPercent, &p.MemoryPercent, &p.DiskUsedBytes,
 			&p.GPUIndex, &p.GPUUtilization, &p.GPUMemoryUsed, &p.GPUTemperature,
 		); err != nil {
@@ -208,18 +208,18 @@ func (s *ClickHouseStore) QueryMetricsByCluster(ctx context.Context, clusterName
 func (s *ClickHouseStore) InsertCostEvent(ctx context.Context, event CostEvent) error {
 	return s.conn.Exec(ctx,
 		"INSERT INTO costs VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-		event.Timestamp, event.ClusterName, event.Cloud, event.Region,
+		event.Timestamp, event.ClusterID, event.Cloud, event.Region,
 		event.InstanceType, event.NodeID, event.HourlyCost, boolToUint8(event.IsSpot),
 	)
 }
 
-func (s *ClickHouseStore) QueryCosts(ctx context.Context, clusterName string, tr TimeRange) ([]CostEvent, error) {
+func (s *ClickHouseStore) QueryCosts(ctx context.Context, clusterID string, tr TimeRange) ([]CostEvent, error) {
 	rows, err := s.conn.Query(ctx,
-		`SELECT timestamp, cluster_name, cloud, region, instance_type, node_id, hourly_cost, is_spot
+		`SELECT timestamp, cluster_id, cloud, region, instance_type, node_id, hourly_cost, is_spot
 		 FROM costs
-		 WHERE cluster_name = $1 AND timestamp >= $2 AND timestamp <= $3
+		 WHERE cluster_id = $1 AND timestamp >= $2 AND timestamp <= $3
 		 ORDER BY timestamp ASC`,
-		clusterName, tr.From, tr.To,
+		clusterID, tr.From, tr.To,
 	)
 	if err != nil {
 		return nil, err
@@ -230,7 +230,7 @@ func (s *ClickHouseStore) QueryCosts(ctx context.Context, clusterName string, tr
 	for rows.Next() {
 		var e CostEvent
 		var isSpot uint8
-		if err := rows.Scan(&e.Timestamp, &e.ClusterName, &e.Cloud, &e.Region,
+		if err := rows.Scan(&e.Timestamp, &e.ClusterID, &e.Cloud, &e.Region,
 			&e.InstanceType, &e.NodeID, &e.HourlyCost, &isSpot); err != nil {
 			return nil, err
 		}
@@ -240,12 +240,12 @@ func (s *ClickHouseStore) QueryCosts(ctx context.Context, clusterName string, tr
 	return events, rows.Err()
 }
 
-func (s *ClickHouseStore) TotalCost(ctx context.Context, clusterName string, tr TimeRange) (float64, error) {
+func (s *ClickHouseStore) TotalCost(ctx context.Context, clusterID string, tr TimeRange) (float64, error) {
 	var total float64
 	err := s.conn.QueryRow(ctx,
 		`SELECT sum(hourly_cost) FROM costs
-		 WHERE cluster_name = $1 AND timestamp >= $2 AND timestamp <= $3`,
-		clusterName, tr.From, tr.To,
+		 WHERE cluster_id = $1 AND timestamp >= $2 AND timestamp <= $3`,
+		clusterID, tr.From, tr.To,
 	).Scan(&total)
 	return total, err
 }

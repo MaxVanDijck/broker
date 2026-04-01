@@ -46,7 +46,7 @@ func TestNoopAnalyticsStore(t *testing.T) {
 	})
 
 	t.Run("given a noop store, when inserting cost event, then no error is returned", func(t *testing.T) {
-		err := s.InsertCostEvent(ctx, CostEvent{ClusterName: "c-1", HourlyCost: 1.5})
+		err := s.InsertCostEvent(ctx, CostEvent{ClusterID: "c-1", HourlyCost: 1.5})
 		if err != nil {
 			t.Fatalf("InsertCostEvent: %v", err)
 		}

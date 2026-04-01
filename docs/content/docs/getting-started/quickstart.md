@@ -3,42 +3,7 @@ title: Quickstart
 weight: 2
 ---
 
-This guide walks through starting the server, connecting an agent, and running your first job.
-
-## Start the server
-
-```bash
-make build && ./bin/broker-server
-```
-
-The server starts on port 8080 and serves everything on a single port:
-
-- Dashboard at `http://localhost:8080`
-- ConnectRPC API for the CLI
-- WebSocket endpoint for agent connections
-- Health check at `/healthz`
-
-## Connect an agent
-
-On a node (or locally for testing):
-
-```bash
-broker-agent --server ws://localhost:8080 --cluster my-cluster
-```
-
-The agent will:
-
-1. Connect to the server via WebSocket
-2. Register with its node info (hostname, CPUs, GPUs)
-3. Start the built-in SSH server on port 2222
-4. Begin sending heartbeats
-5. Arm the dead man's switch (auto-terminates the node if the server becomes unreachable)
-
-For local testing, disable self-termination:
-
-```bash
-broker-agent --server ws://localhost:8080 --cluster my-cluster --self-terminate-after 0
-```
+This guide walks through launching a cluster, running a job, and SSHing into a node.
 
 ## Launch a cluster
 
@@ -59,6 +24,8 @@ Launch it:
 broker launch -c my-cluster task.yaml
 ```
 
+The server auto-starts in the background on first use -- no separate process to manage. SSH config is also auto-installed so `*.broker` hostnames work immediately.
+
 Or launch with inline commands:
 
 ```bash
@@ -76,13 +43,21 @@ NAME        STATUS  CLOUD  REGION     RESOURCES  NODES  LAUNCHED
 my-cluster  INIT    aws    us-east-1  A100:1     1      2026-03-31T05:35:51Z
 ```
 
-Or open the dashboard at `http://localhost:8080`.
+Cluster status lifecycle: `INIT` -> `UP` -> `TERMINATING` -> `TERMINATED`
 
-## Run a job on an existing cluster
+Clusters can also be stopped/started: `UP` -> `STOPPED` -> `UP`.
+
+Or open the dashboard at `http://localhost:8080` for real-time updates with SSE, metrics charts (CPU, memory, GPU), and node detail pages.
+
+## Sync a working directory
+
+Upload your local project to the cluster:
 
 ```bash
-broker exec my-cluster python train.py
+broker launch -c my-cluster -w ~/my-project task.yaml
 ```
+
+The `--workdir` / `-w` flag archives and uploads your directory to the node before running the task.
 
 ## SSH into a node
 
@@ -90,10 +65,38 @@ broker exec my-cluster python train.py
 broker ssh my-cluster
 ```
 
+SSH works through a WebSocket tunnel -- no public IP or firewall rules needed on the node. You can also use the auto-installed SSH config:
+
+```bash
+ssh my-cluster.broker
+```
+
+## Run a job on an existing cluster
+
+```bash
+broker exec my-cluster python train.py
+```
+
 ## View logs
 
 ```bash
 broker logs my-cluster
+```
+
+## Cancel a job
+
+```bash
+broker cancel my-cluster
+broker cancel my-cluster --all
+```
+
+## Autostop
+
+By default, clusters auto-terminate after 30 minutes of idle time. Override with `--autostop`:
+
+```bash
+broker launch -c my-cluster --autostop 1h task.yaml
+broker launch -c my-cluster --autostop 0 task.yaml  # disable
 ```
 
 ## Tear down
@@ -107,4 +110,4 @@ broker down my-cluster
 - [Architecture](../concepts/architecture) -- how the components work together
 - [CLI reference](../reference/cli) -- all available commands
 - [Task YAML reference](../reference/task-yaml) -- full spec for task files
-- [Configuration](../reference/configuration) -- database backends and server settings
+- [Configuration](../reference/configuration) -- server settings and storage backends

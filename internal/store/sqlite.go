@@ -30,16 +30,19 @@ func NewSQLite(path string) (*SQLiteStore, error) {
 func (s *SQLiteStore) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS clusters (
-			name TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
 			data TEXT NOT NULL,
 			created_at TEXT NOT NULL
 		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
 		CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
-			cluster_name TEXT NOT NULL,
+			cluster_id TEXT NOT NULL,
 			data TEXT NOT NULL,
 			created_at TEXT NOT NULL
 		);
+		CREATE INDEX IF NOT EXISTS idx_jobs_cluster_id ON jobs(cluster_id);
 	`)
 	return err
 }
@@ -49,14 +52,27 @@ func (s *SQLiteStore) CreateCluster(c *domain.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO clusters (name, data, created_at) VALUES (?, ?, ?)",
-		c.Name, string(data), time.Now().UTC().Format(time.RFC3339))
+	_, err = s.db.Exec("INSERT INTO clusters (id, name, data, created_at) VALUES (?, ?, ?, ?)",
+		c.ID, c.Name, string(data), time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
 func (s *SQLiteStore) GetCluster(name string) (*domain.Cluster, error) {
 	var data string
 	err := s.db.QueryRow("SELECT data FROM clusters WHERE name = ?", name).Scan(&data)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var c domain.Cluster
+	return &c, json.Unmarshal([]byte(data), &c)
+}
+
+func (s *SQLiteStore) GetClusterByID(id string) (*domain.Cluster, error) {
+	var data string
+	err := s.db.QueryRow("SELECT data FROM clusters WHERE id = ?", id).Scan(&data)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -94,12 +110,12 @@ func (s *SQLiteStore) UpdateCluster(c *domain.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("UPDATE clusters SET data = ? WHERE name = ?", string(data), c.Name)
+	_, err = s.db.Exec("UPDATE clusters SET name = ?, data = ? WHERE id = ?", c.Name, string(data), c.ID)
 	return err
 }
 
-func (s *SQLiteStore) DeleteCluster(name string) error {
-	_, err := s.db.Exec("DELETE FROM clusters WHERE name = ?", name)
+func (s *SQLiteStore) DeleteCluster(id string) error {
+	_, err := s.db.Exec("DELETE FROM clusters WHERE id = ?", id)
 	return err
 }
 
@@ -108,8 +124,8 @@ func (s *SQLiteStore) CreateJob(j *domain.Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO jobs (id, cluster_name, data, created_at) VALUES (?, ?, ?, ?)",
-		j.ID, j.ClusterName, string(data), time.Now().UTC().Format(time.RFC3339))
+	_, err = s.db.Exec("INSERT INTO jobs (id, cluster_id, data, created_at) VALUES (?, ?, ?, ?)",
+		j.ID, j.ClusterID, string(data), time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
@@ -126,8 +142,8 @@ func (s *SQLiteStore) GetJob(id string) (*domain.Job, error) {
 	return &j, json.Unmarshal([]byte(data), &j)
 }
 
-func (s *SQLiteStore) ListJobs(clusterName string) ([]*domain.Job, error) {
-	rows, err := s.db.Query("SELECT data FROM jobs WHERE cluster_name = ? ORDER BY created_at DESC", clusterName)
+func (s *SQLiteStore) ListJobs(clusterID string) ([]*domain.Job, error) {
+	rows, err := s.db.Query("SELECT data FROM jobs WHERE cluster_id = ? ORDER BY created_at DESC", clusterID)
 	if err != nil {
 		return nil, err
 	}

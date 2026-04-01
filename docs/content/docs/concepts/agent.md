@@ -67,14 +67,13 @@ Connect via the CLI:
 broker ssh my-cluster
 ```
 
-Or configure `~/.ssh/config` for VS Code:
+Or use the auto-installed SSH config:
 
+```bash
+ssh my-cluster.broker
 ```
-Host broker-*
-  ProxyCommand broker ssh --stdio %h
-  User root
-  StrictHostKeyChecking no
-```
+
+The `*.broker` wildcard SSH config is auto-installed on first CLI use. It routes through the broker CLI's ProxyCommand, which tunnels traffic through the server to the agent's SSH server. VS Code Remote SSH works automatically -- connect to `<cluster>.broker`.
 
 ## Heartbeats
 
@@ -85,7 +84,7 @@ The agent sends periodic heartbeats to the server containing:
 - GPU metrics (utilization, memory, temperature) per GPU
 - List of running job IDs
 
-Heartbeat data is persisted to the analytics store (chdb or ClickHouse) for monitoring and cost tracking.
+Heartbeat data is persisted to the analytics store (SQLite by default, or chdb/ClickHouse) and displayed in the dashboard as real-time metrics charts.
 
 ## Dead man's switch
 

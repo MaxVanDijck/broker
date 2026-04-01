@@ -8,10 +8,10 @@ A cluster is a group of one or more nodes managed by broker. Each node runs a `b
 ## Lifecycle
 
 ```
-INIT -> UP -> STOPPED -> (start) -> UP
-                |
-                v
-              DOWN (terminated)
+INIT -> UP -> TERMINATING -> TERMINATED
+         |
+         v
+       STOPPED -> (start) -> UP
 ```
 
 | Status | Description |
@@ -19,7 +19,20 @@ INIT -> UP -> STOPPED -> (start) -> UP
 | `INIT` | Cluster created, nodes being provisioned |
 | `UP` | At least one node is connected and healthy |
 | `STOPPED` | Nodes exist but are stopped (not terminated) |
-| `DOWN` | Cluster torn down, all resources released |
+| `TERMINATING` | Teardown in progress, resources being released |
+| `TERMINATED` | Cluster torn down, all resources released |
+
+## Autostop
+
+By default, clusters auto-terminate after 30 minutes of idle time. This prevents orphaned GPU instances from burning money.
+
+```bash
+# Custom autostop duration
+broker launch -c my-cluster --autostop 1h task.yaml
+
+# Disable autostop
+broker launch -c my-cluster --autostop 0 task.yaml
+```
 
 ## Creating a cluster
 

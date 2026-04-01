@@ -48,7 +48,7 @@ func (s *ChDBStore) migrate() error {
 		`CREATE TABLE IF NOT EXISTS metrics (
 			timestamp DateTime64(3),
 			node_id String,
-			cluster_name String,
+			cluster_id String,
 			cpu_percent Float64,
 			memory_percent Float64,
 			disk_used_bytes Int64,
@@ -61,7 +61,7 @@ func (s *ChDBStore) migrate() error {
 
 		`CREATE TABLE IF NOT EXISTS costs (
 			timestamp DateTime64(3),
-			cluster_name String,
+			cluster_id String,
 			cloud String,
 			region String,
 			instance_type String,
@@ -69,7 +69,7 @@ func (s *ChDBStore) migrate() error {
 			hourly_cost Float64,
 			is_spot UInt8
 		) ENGINE = MergeTree()
-		ORDER BY (cluster_name, timestamp)`,
+		ORDER BY (cluster_id, timestamp)`,
 	}
 
 	for _, q := range queries {
@@ -158,7 +158,7 @@ func (s *ChDBStore) InsertMetrics(ctx context.Context, points []MetricPoint) err
 		fmt.Fprintf(&b, "(%d, '%s', '%s', %f, %f, %d, %d, %f, %d, %f)",
 			p.Timestamp.UnixMilli(),
 			escape(p.NodeID),
-			escape(p.ClusterName),
+			escape(p.ClusterID),
 			p.CPUPercent,
 			p.MemoryPercent,
 			p.DiskUsedBytes,
@@ -177,14 +177,14 @@ func (s *ChDBStore) QueryMetrics(ctx context.Context, nodeID string, tr TimeRang
 	return nil, nil
 }
 
-func (s *ChDBStore) QueryMetricsByCluster(ctx context.Context, clusterName string, tr TimeRange) ([]MetricPoint, error) {
+func (s *ChDBStore) QueryMetricsByCluster(ctx context.Context, clusterID string, tr TimeRange) ([]MetricPoint, error) {
 	q := fmt.Sprintf(
-		`SELECT timestamp, node_id, cluster_name, cpu_percent, memory_percent,
+		`SELECT timestamp, node_id, cluster_id, cpu_percent, memory_percent,
 		        disk_used_bytes, gpu_index, gpu_utilization, gpu_memory_used, gpu_temperature
 		 FROM metrics
-		 WHERE cluster_name = '%s' AND timestamp >= %d AND timestamp <= %d
+		 WHERE cluster_id = '%s' AND timestamp >= %d AND timestamp <= %d
 		 ORDER BY timestamp ASC`,
-		escape(clusterName),
+		escape(clusterID),
 		tr.From.UnixMilli(),
 		tr.To.UnixMilli(),
 	)
@@ -208,7 +208,7 @@ func (s *ChDBStore) QueryMetricsByCluster(ctx context.Context, clusterName strin
 		var p MetricPoint
 		p.Timestamp = ts
 		p.NodeID = parts[1]
-		p.ClusterName = parts[2]
+		p.ClusterID = parts[2]
 		fmt.Sscanf(parts[3], "%f", &p.CPUPercent)
 		fmt.Sscanf(parts[4], "%f", &p.MemoryPercent)
 		fmt.Sscanf(parts[5], "%d", &p.DiskUsedBytes)
@@ -225,7 +225,7 @@ func (s *ChDBStore) InsertCostEvent(ctx context.Context, event CostEvent) error 
 	q := fmt.Sprintf(
 		`INSERT INTO costs VALUES (%d, '%s', '%s', '%s', '%s', '%s', %f, %d)`,
 		event.Timestamp.UnixMilli(),
-		escape(event.ClusterName),
+		escape(event.ClusterID),
 		escape(event.Cloud),
 		escape(event.Region),
 		escape(event.InstanceType),
@@ -238,15 +238,15 @@ func (s *ChDBStore) InsertCostEvent(ctx context.Context, event CostEvent) error 
 	return err
 }
 
-func (s *ChDBStore) QueryCosts(ctx context.Context, clusterName string, tr TimeRange) ([]CostEvent, error) {
+func (s *ChDBStore) QueryCosts(ctx context.Context, clusterID string, tr TimeRange) ([]CostEvent, error) {
 	return nil, nil
 }
 
-func (s *ChDBStore) TotalCost(ctx context.Context, clusterName string, tr TimeRange) (float64, error) {
+func (s *ChDBStore) TotalCost(ctx context.Context, clusterID string, tr TimeRange) (float64, error) {
 	q := fmt.Sprintf(
 		`SELECT sum(hourly_cost) FROM costs
-		 WHERE cluster_name = '%s' AND timestamp >= %d AND timestamp <= %d`,
-		escape(clusterName),
+		 WHERE cluster_id = '%s' AND timestamp >= %d AND timestamp <= %d`,
+		escape(clusterID),
 		tr.From.UnixMilli(),
 		tr.To.UnixMilli(),
 	)

@@ -5,7 +5,7 @@ weight: 1
 
 ## broker launch
 
-Launch a cluster or submit a task.
+Launch a cluster or submit a task. The server auto-starts in the background if not already running.
 
 ```bash
 broker launch [flags] [yaml-or-command...]
@@ -16,7 +16,9 @@ broker launch [flags] [yaml-or-command...]
 | `--cluster` | `-c` | auto-generated | Cluster name |
 | `--gpus` | | | GPU type and count (e.g. `A100:4`) |
 | `--cloud` | | | Cloud provider |
+| `--workdir` | `-w` | | Working directory to upload to the node |
 | `--detach-run` | `-d` | `false` | Detach after job submission |
+| `--autostop` | | `30m` | Idle duration before auto-teardown (0 to disable) |
 
 **Examples:**
 
@@ -30,8 +32,14 @@ broker launch -c dev echo "hello world"
 # Launch with GPU override
 broker launch -c train --gpus H100:8 task.yaml
 
+# Launch with workdir sync
+broker launch -c train -w ~/my-project task.yaml
+
 # Auto-generated cluster name
 broker launch task.yaml
+
+# Disable autostop
+broker launch -c train --autostop 0 task.yaml
 ```
 
 ---
@@ -47,6 +55,8 @@ broker status [flags] [clusters...]
 | Flag | Short | Default | Description |
 |---|---|---|---|
 | `--refresh` | `-r` | `false` | Refresh status from cloud provider |
+
+Cluster status lifecycle: `INIT` -> `UP` -> `TERMINATING` -> `TERMINATED`. Stopped clusters: `UP` -> `STOPPED` -> `UP`.
 
 ---
 
@@ -131,7 +141,7 @@ broker cancel [flags] CLUSTER [JOB_IDS...]
 
 ## broker ssh
 
-SSH into a cluster node.
+SSH into a cluster node. Tunnels through the server via WebSocket -- nodes do not need public IPs.
 
 ```bash
 broker ssh [flags] CLUSTER
@@ -142,15 +152,27 @@ broker ssh [flags] CLUSTER
 | `--user` | `-l` | `root` | SSH user |
 | `--port` | `-p` | `2222` | SSH port |
 | `--ssh-flag` | `-o` | | Extra SSH flags |
+| `--stdio` | | `false` | Proxy SSH over stdin/stdout (for ProxyCommand) |
 
-**VS Code config:**
+SSH config is auto-installed on first CLI use. After that, you can use:
 
+```bash
+ssh my-cluster.broker
 ```
-Host broker-*
-  ProxyCommand broker ssh --stdio %h
-  User root
-  StrictHostKeyChecking no
+
+The `*.broker` wildcard in `~/.ssh/config` routes through the broker CLI's ProxyCommand automatically. VS Code Remote SSH also works -- connect to `<cluster>.broker`.
+
+---
+
+## broker ssh-config
+
+Manually install/reinstall the SSH config. This is normally auto-installed on first CLI use.
+
+```bash
+broker ssh-config
 ```
+
+Writes a `~/.broker/ssh_config` file and adds an `Include` directive to `~/.ssh/config`.
 
 ---
 

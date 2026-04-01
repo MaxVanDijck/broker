@@ -88,8 +88,13 @@ func initStateStore(cfg *config.Config, dataDir string, logger *slog.Logger) (st
 
 func initAnalyticsStore(cfg *config.Config, dataDir string, logger *slog.Logger) (store.AnalyticsStore, error) {
 	dsn := cfg.Analytics.DSN
-	if dsn == "" && cfg.Analytics.Backend == "chdb" {
-		dsn = filepath.Join(dataDir, "chdb")
+	if dsn == "" {
+		switch cfg.Analytics.Backend {
+		case "chdb":
+			dsn = filepath.Join(dataDir, "chdb")
+		case "sqlite":
+			dsn = filepath.Join(dataDir, "broker.db")
+		}
 	}
 
 	logger.Info("initializing analytics store", "backend", cfg.Analytics.Backend)

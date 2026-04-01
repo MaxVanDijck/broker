@@ -18,6 +18,7 @@ func (s JobStatus) IsTerminal() bool {
 
 type Job struct {
 	ID          string     `json:"id"`
+	ClusterID   string     `json:"cluster_id"`
 	ClusterName string     `json:"cluster_name"`
 	Name        string     `json:"name,omitempty"`
 	Status      JobStatus  `json:"status"`

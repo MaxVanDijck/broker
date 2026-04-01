@@ -3,50 +3,47 @@ title: broker
 layout: hextra-home
 ---
 
-{{< hextra/hero-badge link="https://github.com/broker-dev/broker" >}}
-  {{< icon name="github" >}}
-  Open Source on GitHub
-{{< /hextra/hero-badge >}}
+<div style="max-width: 48rem; margin: 4rem auto; text-align: center; padding: 0 1.5rem;">
 
-<div class="hx-mt-2 hx-mb-2">
-{{< hextra/hero-headline >}}
-  Run AI workloads&nbsp;<br class="sm:hx-block hx-hidden" />on any infrastructure
-{{< /hextra/hero-headline >}}
-</div>
+<h1 style="font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 1rem;">
+Run AI workloads on<br/>any infrastructure
+</h1>
 
-<div class="hx-mb-4">
-{{< hextra/hero-subtitle >}}
-  Fast, unified compute orchestration for AI.&nbsp;<br class="sm:hx-block hx-hidden" />Written entirely in Go. Single binary. Zero dependencies on nodes.
-{{< /hextra/hero-subtitle >}}
-</div>
+<p style="font-size: 1.15rem; color: #999; margin-bottom: 2rem;">
+One binary. Any cloud. Sub-second launch to SSH.
+</p>
 
-<div class="hx-mb-2">
 {{< hextra/hero-button text="Get Started" link="docs/getting-started" >}}
+
+</div>
+
+<div style="max-width: 36rem; margin: 2.5rem auto 3rem; padding: 0 1.5rem;">
+
+```bash
+$ broker launch -c train --gpus A100:8 task.yaml
+Cluster train launched
+
+$ broker ssh train
+root@train-node-0:~#
+```
+
 </div>
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
-    title="Sub-50ms CLI"
-    subtitle="Single static Go binary. No Python, no pip, no virtual environments. Instant startup."
+    title="Single binary, sub-50ms"
+    subtitle="No Python, no pip, no dependencies. Server auto-starts on first command."
   >}}
   {{< hextra/feature-card
-    title="Zero-dependency agent"
-    subtitle="One binary on every node. Built-in SSH server, log streaming, Docker management. No Ray."
+    title="Any cloud, any GPU"
+    subtitle="AWS with GPU AMIs today. GCP, Azure, and Kubernetes coming soon."
   >}}
   {{< hextra/feature-card
-    title="Any infrastructure"
-    subtitle="AWS, GCP, Azure, Kubernetes, on-prem SSH. One YAML spec runs anywhere."
+    title="Zero-config SSH"
+    subtitle="Tunneled through WebSocket. VS Code works via *.broker wildcard."
   >}}
   {{< hextra/feature-card
-    title="Agent connects outbound"
-    subtitle="WebSocket tunnel from agent to server. No public IPs or inbound firewall rules needed."
-  >}}
-  {{< hextra/feature-card
-    title="ConnectRPC API"
-    subtitle="One port serves gRPC, gRPC-web, and plain HTTP. CLI, dashboard, and curl all work."
-  >}}
-  {{< hextra/feature-card
-    title="Built-in SSH"
-    subtitle="broker ssh my-cluster just works. VS Code Remote SSH support via ProxyCommand."
+    title="Real-time dashboard"
+    subtitle="SSE updates, CPU/memory/GPU charts, node details, one-click VS Code."
   >}}
 {{< /hextra/feature-grid >}}

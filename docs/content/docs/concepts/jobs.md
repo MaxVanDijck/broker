@@ -20,7 +20,7 @@ PENDING -> SETUP -> RUNNING -> SUCCEEDED
 | `RUNNING` | Running the `run` script |
 | `SUCCEEDED` | Completed with exit code 0 |
 | `FAILED` | Completed with non-zero exit code or error |
-| `CANCELLED` | Cancelled by user |
+| `CANCELLED` | Cancelled by user via `broker cancel` |
 
 ## Submitting jobs
 

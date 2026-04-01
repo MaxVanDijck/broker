@@ -35,17 +35,19 @@ func NewPostgres(dsn string) (*PostgresStore, error) {
 func (s *PostgresStore) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS clusters (
-			name TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
 			data JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
 		CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
-			cluster_name TEXT NOT NULL,
+			cluster_id TEXT NOT NULL,
 			data JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
-		CREATE INDEX IF NOT EXISTS idx_jobs_cluster ON jobs(cluster_name);
+		CREATE INDEX IF NOT EXISTS idx_jobs_cluster_id ON jobs(cluster_id);
 	`)
 	return err
 }
@@ -55,13 +57,26 @@ func (s *PostgresStore) CreateCluster(c *domain.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO clusters (name, data) VALUES ($1, $2)", c.Name, data)
+	_, err = s.db.Exec("INSERT INTO clusters (id, name, data) VALUES ($1, $2, $3)", c.ID, c.Name, data)
 	return err
 }
 
 func (s *PostgresStore) GetCluster(name string) (*domain.Cluster, error) {
 	var data []byte
 	err := s.db.QueryRow("SELECT data FROM clusters WHERE name = $1", name).Scan(&data)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var c domain.Cluster
+	return &c, json.Unmarshal(data, &c)
+}
+
+func (s *PostgresStore) GetClusterByID(id string) (*domain.Cluster, error) {
+	var data []byte
+	err := s.db.QueryRow("SELECT data FROM clusters WHERE id = $1", id).Scan(&data)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -99,12 +114,12 @@ func (s *PostgresStore) UpdateCluster(c *domain.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("UPDATE clusters SET data = $1 WHERE name = $2", data, c.Name)
+	_, err = s.db.Exec("UPDATE clusters SET name = $1, data = $2 WHERE id = $3", c.Name, data, c.ID)
 	return err
 }
 
-func (s *PostgresStore) DeleteCluster(name string) error {
-	_, err := s.db.Exec("DELETE FROM clusters WHERE name = $1", name)
+func (s *PostgresStore) DeleteCluster(id string) error {
+	_, err := s.db.Exec("DELETE FROM clusters WHERE id = $1", id)
 	return err
 }
 
@@ -113,8 +128,8 @@ func (s *PostgresStore) CreateJob(j *domain.Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO jobs (id, cluster_name, data) VALUES ($1, $2, $3)",
-		j.ID, j.ClusterName, data)
+	_, err = s.db.Exec("INSERT INTO jobs (id, cluster_id, data) VALUES ($1, $2, $3)",
+		j.ID, j.ClusterID, data)
 	return err
 }
 
@@ -131,9 +146,9 @@ func (s *PostgresStore) GetJob(id string) (*domain.Job, error) {
 	return &j, json.Unmarshal(data, &j)
 }
 
-func (s *PostgresStore) ListJobs(clusterName string) ([]*domain.Job, error) {
-	rows, err := s.db.Query("SELECT data FROM jobs WHERE cluster_name = $1 ORDER BY created_at DESC",
-		clusterName)
+func (s *PostgresStore) ListJobs(clusterID string) ([]*domain.Job, error) {
+	rows, err := s.db.Query("SELECT data FROM jobs WHERE cluster_id = $1 ORDER BY created_at DESC",
+		clusterID)
 	if err != nil {
 		return nil, err
 	}

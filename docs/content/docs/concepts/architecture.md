@@ -7,20 +7,26 @@ broker uses a hub-and-spoke architecture with three components, two protocols, a
 
 ## Components
 
-### Server (`broker-server`)
+### Server
 
 The control plane. A single Go binary serving everything on one HTTP port:
 
 - **ConnectRPC API** -- handles CLI and SDK requests. Supports gRPC, gRPC-web, and plain HTTP/JSON simultaneously from the same handler.
 - **WebSocket tunnel** -- accepts agent connections at `/agent/v1/connect`. Agents connect outbound; the server never initiates connections to nodes.
-- **Dashboard** -- embedded React SPA served on the same port. No separate frontend deployment.
-- **Health endpoint** -- `/healthz` for load balancer probes.
+- **Dashboard** -- embedded React SPA served on the same port. Real-time SSE updates, metrics charts (CPU, memory, GPU), node detail pages, and one-click VS Code access. No separate frontend deployment.
+- **Health endpoint** -- `/healthz` for load balancer probes, `/readyz` for full readiness checks.
+
+For local development, the server auto-starts as a background process on first CLI use. No separate `broker-server` process is needed.
 
 ### CLI (`broker`)
 
 A single static Go binary. Communicates with the server via ConnectRPC (HTTP POST with protobuf). Starts in under 50ms.
 
-The CLI also provides `broker ssh` which acts as an SSH ProxyCommand, enabling `ssh` and VS Code Remote SSH to connect to cluster nodes through the server tunnel.
+On first use, the CLI:
+1. Auto-starts the server if not already running
+2. Auto-installs SSH config so `*.broker` hostnames work immediately
+
+The CLI provides `broker ssh` which tunnels SSH through the server via WebSocket, enabling `ssh <cluster>.broker` and VS Code Remote SSH without any manual SSH config setup.
 
 ### Agent (`broker-agent`)
 
@@ -39,6 +45,15 @@ The agent includes:
 | Docker manager | Image pull, container run/stop/inspect. GPU passthrough. Host/bridge networking. |
 | Heartbeat | Periodic node metrics (CPU, memory, GPU utilization). Reports running job IDs. Persisted to analytics store. |
 | Watchdog | Dead man's switch. Self-terminates the cloud instance if the server is unreachable for a configurable duration. |
+
+## Provisioning
+
+broker provisions cloud instances directly via cloud APIs. For AWS, this includes:
+
+- EC2 instance creation with GPU-optimized instance types
+- Deep Learning AMI selection for GPU instances (pre-installed NVIDIA drivers, CUDA, Docker)
+- Security group and key pair management
+- User data scripts to bootstrap the agent on launch
 
 ## Storage
 
@@ -59,11 +74,11 @@ Handles logs, metrics, and cost tracking. Append-only writes with time-range que
 
 | Mode | Backend |
 |---|---|
-| Local/dev (default) | Noop (logs to stdout only) |
-| Local with analytics | chdb (embedded ClickHouse, build with `-tags chdb`) |
+| Local/dev (default) | SQLite (`~/.broker/broker.db`) |
+| Local with ClickHouse SQL | chdb (embedded ClickHouse, build with `-tags chdb`) |
 | Production | ClickHouse |
 
-Both backends use identical ClickHouse SQL. Queries written for chdb work on ClickHouse without modification.
+Metrics persist locally by default in SQLite. The dashboard displays CPU, memory, and GPU utilization charts from this data. The `chdb` and ClickHouse backends use identical ClickHouse SQL -- queries written for one work on the other without modification.
 
 ## Protocols
 
@@ -106,4 +121,3 @@ Message types:
 | Server -> Agent | `SubmitJob` | Start a new job |
 | Server -> Agent | `CancelJob` | Cancel a running job |
 | Server -> Agent | `TerminateNode` | Shut down the agent and node |
-

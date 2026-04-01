@@ -12,13 +12,14 @@ import (
 type StateStore interface {
 	CreateCluster(c *domain.Cluster) error
 	GetCluster(name string) (*domain.Cluster, error)
+	GetClusterByID(id string) (*domain.Cluster, error)
 	ListClusters() ([]*domain.Cluster, error)
 	UpdateCluster(c *domain.Cluster) error
-	DeleteCluster(name string) error
+	DeleteCluster(id string) error
 
 	CreateJob(j *domain.Job) error
 	GetJob(id string) (*domain.Job, error)
-	ListJobs(clusterName string) ([]*domain.Job, error)
+	ListJobs(clusterID string) ([]*domain.Job, error)
 	ListAllJobs() ([]*domain.Job, error)
 	UpdateJob(j *domain.Job) error
 }
@@ -36,7 +37,7 @@ type LogEntry struct {
 type MetricPoint struct {
 	Timestamp      time.Time
 	NodeID         string
-	ClusterName    string
+	ClusterID      string
 	CPUPercent     float64
 	MemoryPercent  float64
 	DiskUsedBytes  int64
@@ -49,7 +50,7 @@ type MetricPoint struct {
 // CostEvent is a billing event for a cluster.
 type CostEvent struct {
 	Timestamp    time.Time
-	ClusterName  string
+	ClusterID    string
 	Cloud        string
 	Region       string
 	InstanceType string
@@ -74,12 +75,12 @@ type AnalyticsStore interface {
 	// Metrics
 	InsertMetrics(ctx context.Context, points []MetricPoint) error
 	QueryMetrics(ctx context.Context, nodeID string, tr TimeRange) ([]MetricPoint, error)
-	QueryMetricsByCluster(ctx context.Context, clusterName string, tr TimeRange) ([]MetricPoint, error)
+	QueryMetricsByCluster(ctx context.Context, clusterID string, tr TimeRange) ([]MetricPoint, error)
 
 	// Costs
 	InsertCostEvent(ctx context.Context, event CostEvent) error
-	QueryCosts(ctx context.Context, clusterName string, tr TimeRange) ([]CostEvent, error)
-	TotalCost(ctx context.Context, clusterName string, tr TimeRange) (float64, error)
+	QueryCosts(ctx context.Context, clusterID string, tr TimeRange) ([]CostEvent, error)
+	TotalCost(ctx context.Context, clusterID string, tr TimeRange) (float64, error)
 
 	Close() error
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -33,9 +34,22 @@ type Server struct {
 	logbus      *LogBus
 	sshSessions *sshSessionManager
 	events      *EventBus
+	autostop    *AutostopManager
+
+	// pendingJobs holds task specs for jobs that couldn't be dispatched
+	// because no agent was connected yet (e.g. cloud instances still booting).
+	// Dispatched when the agent registers.
+	pendingMu   sync.Mutex
+	pendingJobs map[string][]pendingJob // cluster_id -> jobs
+}
+
+type pendingJob struct {
+	jobID string
+	task  *brokerpb.TaskSpec
 }
 
 func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logger *slog.Logger) *Server {
+	evBus := NewEventBus(logger.With("component", "events"))
 	srv := &Server{
 		store:       s,
 		analytics:   a,
@@ -44,7 +58,9 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 		Tunnel:      NewTunnelHandler(logger.With("component", "tunnel")),
 		logbus:      NewLogBus(),
 		sshSessions: newSSHSessionManager(),
-		events:      NewEventBus(logger.With("component", "events")),
+		events:      evBus,
+		autostop:    NewAutostopManager(s, r, evBus, logger.With("component", "autostop")),
+		pendingJobs: make(map[string][]pendingJob),
 	}
 
 	srv.Tunnel.SetCallbacks(
@@ -60,6 +76,10 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 }
 
 func (s *Server) Serve(port int) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.autostop.Run(ctx)
+
 	mux := http.NewServeMux()
 
 	// ConnectRPC API (serves gRPC, gRPC-web, and Connect protocols on the same handler)
@@ -115,11 +135,21 @@ func (s *Server) Serve(port int) error {
 	return hs.ListenAndServe()
 }
 
+func (s *Server) hasAgentForCluster(clusterID, clusterName string) bool {
+	if _, ok := s.Tunnel.GetAgentByClusterID(clusterID); ok {
+		return true
+	}
+	if _, ok := s.Tunnel.GetAgentByCluster(clusterName); ok {
+		return true
+	}
+	return false
+}
+
 // watchProvisionedCluster terminates cloud instances if no agent registers
 // within the given timeout. This prevents orphaned instances when the agent
 // binary download fails, the UserData script errors, or the instance cannot
 // reach the server.
-func (s *Server) watchProvisionedCluster(clusterName string, prov provider.Provider, cluster *domain.Cluster, timeout time.Duration) {
+func (s *Server) watchProvisionedCluster(clusterID string, prov provider.Provider, cluster *domain.Cluster, timeout time.Duration) {
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -127,25 +157,26 @@ func (s *Server) watchProvisionedCluster(clusterName string, prov provider.Provi
 	for {
 		select {
 		case <-ticker.C:
-			if _, ok := s.Tunnel.GetAgentByCluster(clusterName); ok {
-				s.logger.Info("agent registered, provision watchdog cancelled", "cluster", clusterName)
+			if s.hasAgentForCluster(clusterID, cluster.Name) {
+				s.logger.Info("agent registered, provision watchdog cancelled", "cluster", cluster.Name, "cluster_id", clusterID)
 				return
 			}
 		case <-deadline:
-			if _, ok := s.Tunnel.GetAgentByCluster(clusterName); ok {
+			if s.hasAgentForCluster(clusterID, cluster.Name) {
 				return
 			}
 
 			s.logger.Error("no agent registered within timeout, terminating instances",
-				"cluster", clusterName,
+				"cluster", cluster.Name,
+				"cluster_id", clusterID,
 				"timeout", timeout,
 			)
 
 			if err := prov.Teardown(context.Background(), cluster); err != nil {
-				s.logger.Error("failed to teardown orphaned cluster", "cluster", clusterName, "error", err)
+				s.logger.Error("failed to teardown orphaned cluster", "cluster", cluster.Name, "error", err)
 			}
 
-			s.store.DeleteCluster(clusterName)
+			s.store.DeleteCluster(clusterID)
 			return
 		}
 	}
@@ -155,14 +186,37 @@ func (s *Server) watchProvisionedCluster(clusterName string, prov provider.Provi
 
 func (s *Server) onAgentRegister(ac *AgentConnection) {
 	s.logger.Info("agent online", "node_id", ac.NodeID, "cluster", ac.ClusterName)
-	s.trySetClusterUp(ac.ClusterName)
+
+	// Resolve the cluster name to a cluster ID
+	cluster, err := s.store.GetCluster(ac.ClusterName)
+	if err != nil || cluster == nil {
+		s.logger.Warn("agent registered for unknown cluster", "cluster", ac.ClusterName)
+		return
+	}
+	ac.ClusterID = cluster.ID
+
+	s.trySetClusterUp(cluster.ID)
 	s.events.Publish(Event{
 		Type: "node_online",
 		Data: map[string]string{
 			"node_id":      ac.NodeID,
 			"cluster_name": ac.ClusterName,
+			"cluster_id":   cluster.ID,
 		},
 	})
+
+	// Dispatch any pending jobs that were queued before the agent connected
+	s.pendingMu.Lock()
+	jobs := s.pendingJobs[cluster.ID]
+	delete(s.pendingJobs, cluster.ID)
+	s.pendingMu.Unlock()
+
+	for _, pj := range jobs {
+		s.logger.Info("dispatching pending job", "job_id", pj.jobID, "cluster", ac.ClusterName)
+		if err := s.dispatchJob(context.Background(), cluster.ID, pj.jobID, pj.task); err != nil {
+			s.logger.Error("failed to dispatch pending job", "job_id", pj.jobID, "error", err)
+		}
+	}
 }
 
 func (s *Server) onAgentDisconnect(ac *AgentConnection) {
@@ -172,12 +226,13 @@ func (s *Server) onAgentDisconnect(ac *AgentConnection) {
 		Data: map[string]string{
 			"node_id":      ac.NodeID,
 			"cluster_name": ac.ClusterName,
+			"cluster_id":   ac.ClusterID,
 		},
 	})
 }
 
-func (s *Server) trySetClusterUp(clusterName string) {
-	cluster, err := s.store.GetCluster(clusterName)
+func (s *Server) trySetClusterUp(clusterID string) {
+	cluster, err := s.store.GetClusterByID(clusterID)
 	if err != nil || cluster == nil {
 		return
 	}
@@ -187,7 +242,8 @@ func (s *Server) trySetClusterUp(clusterName string) {
 		s.events.Publish(Event{
 			Type: "cluster_update",
 			Data: map[string]string{
-				"cluster_name": clusterName,
+				"cluster_name": cluster.Name,
+				"cluster_id":   clusterID,
 				"status":       string(domain.ClusterStatusUp),
 			},
 		})
@@ -196,7 +252,14 @@ func (s *Server) trySetClusterUp(clusterName string) {
 
 func (s *Server) onAgentHeartbeat(nodeID, clusterName string, hb *agentpb.Heartbeat) {
 	s.logger.Debug("heartbeat", "node_id", nodeID, "jobs", hb.RunningJobIds)
-	s.trySetClusterUp(clusterName)
+
+	// Resolve cluster name to ID for metrics storage
+	ac, ok := s.Tunnel.GetAgent(nodeID)
+	clusterID := ""
+	if ok && ac.ClusterID != "" {
+		clusterID = ac.ClusterID
+		s.trySetClusterUp(clusterID)
+	}
 
 	if s.analytics == nil {
 		return
@@ -206,7 +269,7 @@ func (s *Server) onAgentHeartbeat(nodeID, clusterName string, hb *agentpb.Heartb
 	base := store.MetricPoint{
 		Timestamp:     time.Unix(hb.TimestampUnix, 0),
 		NodeID:        nodeID,
-		ClusterName:   clusterName,
+		ClusterID:     clusterID,
 		CPUPercent:    hb.CpuPercent,
 		MemoryPercent: hb.MemoryPercent,
 		DiskUsedBytes: hb.DiskUsedBytes,
@@ -230,7 +293,7 @@ func (s *Server) onAgentHeartbeat(nodeID, clusterName string, hb *agentpb.Heartb
 	}
 }
 
-func (s *Server) onAgentLogBatch(jobID string, batch *agentpb.LogBatch) {
+func (s *Server) onAgentLogBatch(clusterName, jobID string, batch *agentpb.LogBatch) {
 	entries := make([]store.LogEntry, 0, len(batch.Entries))
 	for _, e := range batch.Entries {
 		entries = append(entries, store.LogEntry{
@@ -248,6 +311,9 @@ func (s *Server) onAgentLogBatch(jobID string, batch *agentpb.LogBatch) {
 	}
 
 	s.logbus.Publish(jobID, entries)
+	if clusterName != "" {
+		s.logbus.Publish("cluster:"+clusterName, entries)
+	}
 }
 
 func (s *Server) onAgentJobUpdate(jobID string, update *agentpb.JobUpdate) {
@@ -262,6 +328,8 @@ func (s *Server) onAgentJobUpdate(jobID string, update *agentpb.JobUpdate) {
 		s.logger.Warn("job update for unknown job", "job_id", jobID)
 		return
 	}
+
+	s.autostop.Touch(job.ClusterID)
 
 	now := time.Now().UTC()
 	switch update.State {
@@ -295,15 +363,30 @@ func (s *Server) onAgentJobUpdate(jobID string, update *agentpb.JobUpdate) {
 		Data: map[string]string{
 			"job_id":       jobID,
 			"cluster_name": job.ClusterName,
+			"cluster_id":   job.ClusterID,
 			"status":       string(job.Status),
 		},
 	})
 }
 
-func (s *Server) dispatchJob(ctx context.Context, clusterName string, jobID string, task *brokerpb.TaskSpec) error {
-	ac, ok := s.Tunnel.GetAgentByCluster(clusterName)
+func (s *Server) dispatchJob(ctx context.Context, clusterID string, jobID string, task *brokerpb.TaskSpec) error {
+	s.autostop.Touch(clusterID)
+
+	ac, ok := s.Tunnel.GetAgentByClusterID(clusterID)
 	if !ok {
-		return fmt.Errorf("no agent connected for cluster %q", clusterName)
+		// Agent may have registered before the cluster was created in the
+		// store, so its ClusterID hasn't been set yet. Look up by cluster
+		// name as a fallback and backfill the ID.
+		cluster, _ := s.store.GetClusterByID(clusterID)
+		if cluster != nil {
+			ac, ok = s.Tunnel.GetAgentByCluster(cluster.Name)
+			if ok && ac.ClusterID == "" {
+				ac.ClusterID = clusterID
+			}
+		}
+	}
+	if !ok {
+		return fmt.Errorf("no agent connected for cluster %q", clusterID)
 	}
 
 	submit := &agentpb.SubmitJob{
@@ -365,12 +448,18 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 
 	s.logger.Info("launching cluster", "name", clusterName)
 
+	autostopMinutes := int(msg.IdleMinutesToAutostop)
+	if autostopMinutes == 0 {
+		autostopMinutes = 30
+	}
+
 	cluster := &domain.Cluster{
-		ID:         uuid.New().String(),
-		Name:       clusterName,
-		Status:     domain.ClusterStatusInit,
-		LaunchedAt: time.Now().UTC(),
-		UserID:     "default",
+		ID:              uuid.New().String(),
+		Name:            clusterName,
+		Status:          domain.ClusterStatusInit,
+		LaunchedAt:      time.Now().UTC(),
+		UserID:          "default",
+		AutostopMinutes: autostopMinutes,
 	}
 
 	if msg.Task != nil {
@@ -405,7 +494,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 	}
 
 	if existing != nil && (existing.Status == domain.ClusterStatusTerminated || existing.Status == domain.ClusterStatusTerminating) {
-		s.store.DeleteCluster(clusterName)
+		s.store.DeleteCluster(existing.ID)
 		existing = nil
 	}
 
@@ -417,7 +506,13 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		cluster = existing
 	}
 
-	s.logger.Info("cluster registered", "name", clusterName, "status", cluster.Status)
+	s.logger.Info("cluster registered", "name", clusterName, "id", cluster.ID, "status", cluster.Status)
+
+	if cluster.Cloud != "" && cluster.AutostopMinutes > 0 {
+		timeout := time.Duration(cluster.AutostopMinutes) * time.Minute
+		s.autostop.SetTimeout(cluster.ID, timeout)
+		s.logger.Info("autostop configured", "cluster", clusterName, "timeout", timeout)
+	}
 
 	// If a cloud provider is specified and available, provision instances asynchronously.
 	// The agent will connect back via WebSocket once the instance boots and the
@@ -426,16 +521,26 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		prov, ok := s.registry.Get(cluster.Cloud)
 		if ok {
 			task := protoToTaskSpec(msg.Task)
+			// Capture identifiers by value to avoid racing on the
+			// cluster pointer after the handler returns.
+			launchClusterID := cluster.ID
+			launchClusterCloud := cluster.Cloud
 			go func() {
-				s.logger.Info("provisioning cloud instances", "cloud", cluster.Cloud, "cluster", clusterName)
-				nodes, err := prov.Launch(context.Background(), cluster, task)
+				s.logger.Info("provisioning cloud instances", "cloud", launchClusterCloud, "cluster", clusterName)
+				// Re-fetch from the store so the goroutine has its own copy.
+				c, _ := s.store.GetClusterByID(launchClusterID)
+				if c == nil {
+					s.logger.Error("cluster disappeared before provisioning", "cluster", clusterName)
+					return
+				}
+				nodes, err := prov.Launch(context.Background(), c, task)
 				if err != nil {
 					s.logger.Error("cloud provisioning failed", "cluster", clusterName, "error", err)
 					return
 				}
 				if len(nodes) > 0 {
-					cluster.HeadIP = nodes[0].PublicIP
-					s.store.UpdateCluster(cluster)
+					c.HeadIP = nodes[0].PublicIP
+					s.store.UpdateCluster(c)
 				}
 				s.logger.Info("cloud provisioning complete", "cluster", clusterName, "nodes", len(nodes))
 
@@ -444,7 +549,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 				// the instances. This prevents orphaned instances when the
 				// agent binary download fails or the instance can't reach
 				// the server.
-				go s.watchProvisionedCluster(clusterName, prov, cluster, 30*time.Minute)
+				go s.watchProvisionedCluster(launchClusterID, prov, c, 30*time.Minute)
 			}()
 		} else {
 			s.logger.Warn("no provider registered for cloud", "cloud", cluster.Cloud)
@@ -454,6 +559,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 	jobID := uuid.New().String()[:8]
 	job := &domain.Job{
 		ID:          jobID,
+		ClusterID:   cluster.ID,
 		ClusterName: clusterName,
 		Status:      domain.JobStatusPending,
 		UserID:      "default",
@@ -467,8 +573,11 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to store job: %w", err))
 	}
 
-	if err := s.dispatchJob(ctx, clusterName, jobID, msg.Task); err != nil {
-		s.logger.Warn("failed to dispatch job to agent", "job_id", jobID, "error", err)
+	if err := s.dispatchJob(ctx, cluster.ID, jobID, msg.Task); err != nil {
+		s.logger.Info("job queued, waiting for agent", "job_id", jobID, "cluster", clusterName)
+		s.pendingMu.Lock()
+		s.pendingJobs[cluster.ID] = append(s.pendingJobs[cluster.ID], pendingJob{jobID: jobID, task: msg.Task})
+		s.pendingMu.Unlock()
 	}
 
 	return connect.NewResponse(&brokerpb.LaunchResponse{
@@ -548,6 +657,7 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 	}
 
 	s.logger.Info("tearing down cluster", "name", req.Msg.ClusterName)
+	s.autostop.Remove(cluster.ID)
 
 	cluster.Status = domain.ClusterStatusTerminating
 	s.store.UpdateCluster(cluster)
@@ -555,31 +665,44 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 		Type: "cluster_update",
 		Data: map[string]string{
 			"cluster_name": cluster.Name,
+			"cluster_id":   cluster.ID,
 			"status":       string(domain.ClusterStatusTerminating),
 		},
 	})
 
 	// Teardown cloud resources asynchronously so the CLI/dashboard gets
 	// immediate feedback. The cluster transitions TERMINATING -> TERMINATED.
+	// Capture identifiers by value to avoid racing on the cluster pointer.
+	clusterID := cluster.ID
+	clusterName := cluster.Name
+	clusterCloud := cluster.Cloud
 	go func() {
-		if cluster.Cloud != "" {
-			if prov, ok := s.registry.Get(cluster.Cloud); ok {
-				if err := prov.Teardown(context.Background(), cluster); err != nil {
-					s.logger.Error("cloud teardown failed", "cluster", cluster.Name, "error", err)
+		if clusterCloud != "" {
+			if prov, ok := s.registry.Get(clusterCloud); ok {
+				// Re-fetch the cluster from the store so the teardown
+				// goroutine has its own copy.
+				c, _ := s.store.GetClusterByID(clusterID)
+				if c != nil {
+					if err := prov.Teardown(context.Background(), c); err != nil {
+						s.logger.Error("cloud teardown failed", "cluster", clusterName, "error", err)
+					}
 				}
 			}
 		}
 
-		cluster.Status = domain.ClusterStatusTerminated
-		s.store.UpdateCluster(cluster)
+		if c, _ := s.store.GetClusterByID(clusterID); c != nil {
+			c.Status = domain.ClusterStatusTerminated
+			s.store.UpdateCluster(c)
+		}
 		s.events.Publish(Event{
 			Type: "cluster_update",
 			Data: map[string]string{
-				"cluster_name": cluster.Name,
+				"cluster_name": clusterName,
+				"cluster_id":   clusterID,
 				"status":       string(domain.ClusterStatusTerminated),
 			},
 		})
-		s.logger.Info("cluster terminated", "name", cluster.Name)
+		s.logger.Info("cluster terminated", "name", clusterName)
 	}()
 
 	return connect.NewResponse(&brokerpb.ClusterResponse{
@@ -626,6 +749,7 @@ func (s *Server) Exec(ctx context.Context, req *connect.Request[brokerpb.ExecReq
 	jobID := uuid.New().String()[:8]
 	job := &domain.Job{
 		ID:          jobID,
+		ClusterID:   cluster.ID,
 		ClusterName: cluster.Name,
 		Status:      domain.JobStatusPending,
 		UserID:      "default",
@@ -641,8 +765,11 @@ func (s *Server) Exec(ctx context.Context, req *connect.Request[brokerpb.ExecReq
 
 	s.logger.Info("job submitted", "job_id", jobID, "cluster", cluster.Name)
 
-	if err := s.dispatchJob(ctx, cluster.Name, jobID, req.Msg.Task); err != nil {
-		s.logger.Warn("failed to dispatch job to agent", "job_id", jobID, "error", err)
+	if err := s.dispatchJob(ctx, cluster.ID, jobID, req.Msg.Task); err != nil {
+		s.logger.Info("job queued, waiting for agent", "job_id", jobID, "cluster", cluster.Name)
+		s.pendingMu.Lock()
+		s.pendingJobs[cluster.ID] = append(s.pendingJobs[cluster.ID], pendingJob{jobID: jobID, task: req.Msg.Task})
+		s.pendingMu.Unlock()
 	}
 
 	return connect.NewResponse(&brokerpb.ExecResponse{JobId: jobID}), nil
@@ -655,22 +782,45 @@ func formatLogLine(entry store.LogEntry) string {
 
 func (s *Server) Logs(ctx context.Context, req *connect.Request[brokerpb.LogsRequest], stream *connect.ServerStream[brokerpb.LogsResponse]) error {
 	jobID := req.Msg.JobId
+	clusterName := req.Msg.ClusterName
 	follow := req.Msg.Follow
-	s.logger.Info("streaming logs", "cluster", req.Msg.ClusterName, "job_id", jobID, "follow", follow)
+	s.logger.Info("streaming logs", "cluster", clusterName, "job_id", jobID, "follow", follow)
 
 	if s.analytics != nil {
 		tr := store.TimeRange{
 			From: time.Time{},
 			To:   time.Now().Add(time.Minute),
 		}
-		existing, err := s.analytics.QueryLogs(ctx, jobID, tr, 10000)
-		if err != nil {
-			return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to query logs: %w", err))
+
+		var jobIDs []string
+		if jobID != "" {
+			jobIDs = []string{jobID}
+		} else if clusterName != "" {
+			cluster, err := s.store.GetCluster(clusterName)
+			if err != nil {
+				return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get cluster: %w", err))
+			}
+			if cluster != nil {
+				jobs, err := s.store.ListJobs(cluster.ID)
+				if err != nil {
+					return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list jobs: %w", err))
+				}
+				for _, j := range jobs {
+					jobIDs = append(jobIDs, j.ID)
+				}
+			}
 		}
-		for _, entry := range existing {
-			line := formatLogLine(entry)
-			if err := stream.Send(&brokerpb.LogsResponse{Line: line}); err != nil {
-				return err
+
+		for _, id := range jobIDs {
+			existing, err := s.analytics.QueryLogs(ctx, id, tr, 10000)
+			if err != nil {
+				return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to query logs: %w", err))
+			}
+			for _, entry := range existing {
+				line := formatLogLine(entry)
+				if err := stream.Send(&brokerpb.LogsResponse{Line: line}); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -679,8 +829,16 @@ func (s *Server) Logs(ctx context.Context, req *connect.Request[brokerpb.LogsReq
 		return nil
 	}
 
-	ch := s.logbus.Subscribe(jobID)
-	defer s.logbus.Unsubscribe(jobID, ch)
+	subscribeKey := jobID
+	if subscribeKey == "" && clusterName != "" {
+		subscribeKey = "cluster:" + clusterName
+	}
+	if subscribeKey == "" {
+		return nil
+	}
+
+	ch := s.logbus.Subscribe(subscribeKey)
+	defer s.logbus.Unsubscribe(subscribeKey, ch)
 
 	for {
 		select {
@@ -699,7 +857,84 @@ func (s *Server) Logs(ctx context.Context, req *connect.Request[brokerpb.LogsReq
 }
 
 func (s *Server) CancelJob(ctx context.Context, req *connect.Request[brokerpb.CancelJobRequest]) (*connect.Response[brokerpb.CancelJobResponse], error) {
-	s.logger.Info("cancelling jobs", "cluster", req.Msg.ClusterName, "job_ids", req.Msg.JobIds)
+	clusterName := req.Msg.ClusterName
+	s.logger.Info("cancelling jobs", "cluster", clusterName, "job_ids", req.Msg.JobIds, "all", req.Msg.All)
+
+	if clusterName == "" && len(req.Msg.JobIds) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cluster_name or job_ids required"))
+	}
+
+	var jobsToCancel []*domain.Job
+
+	if len(req.Msg.JobIds) > 0 {
+		for _, jobID := range req.Msg.JobIds {
+			job, err := s.store.GetJob(jobID)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get job %s: %w", jobID, err))
+			}
+			if job == nil {
+				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("job %q not found", jobID))
+			}
+			jobsToCancel = append(jobsToCancel, job)
+		}
+	} else if clusterName != "" {
+		cluster, err := s.store.GetCluster(clusterName)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if cluster == nil {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("cluster %q not found", clusterName))
+		}
+		jobs, err := s.store.ListJobs(cluster.ID)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		for _, j := range jobs {
+			if req.Msg.All || !j.Status.IsTerminal() {
+				jobsToCancel = append(jobsToCancel, j)
+			}
+		}
+	}
+
+	for _, job := range jobsToCancel {
+		if job.Status.IsTerminal() {
+			continue
+		}
+
+		ac, ok := s.Tunnel.GetAgentByClusterID(job.ClusterID)
+		if !ok {
+			ac, ok = s.Tunnel.GetAgentByCluster(job.ClusterName)
+		}
+
+		if ok {
+			if err := ac.Tunnel.Send(ctx, &agentpb.Envelope{
+				Payload: &agentpb.Envelope_CancelJob{CancelJob: &agentpb.CancelJob{
+					JobId: job.ID,
+					Force: false,
+				}},
+			}); err != nil {
+				s.logger.Error("failed to send cancel to agent", "job_id", job.ID, "error", err)
+			}
+		}
+
+		now := time.Now().UTC()
+		job.Status = domain.JobStatusCancelled
+		job.EndedAt = &now
+		if err := s.store.UpdateJob(job); err != nil {
+			s.logger.Error("failed to update cancelled job", "job_id", job.ID, "error", err)
+		}
+
+		s.events.Publish(Event{
+			Type: "job_update",
+			Data: map[string]string{
+				"job_id":       job.ID,
+				"cluster_name": job.ClusterName,
+				"cluster_id":   job.ClusterID,
+				"status":       string(domain.JobStatusCancelled),
+			},
+		})
+	}
+
 	return connect.NewResponse(&brokerpb.CancelJobResponse{}), nil
 }
 
@@ -711,12 +946,19 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cluster := r.URL.Query().Get("cluster")
+	clusterName := r.URL.Query().Get("cluster")
 
 	var jobs []*domain.Job
 	var err error
-	if cluster != "" {
-		jobs, err = s.store.ListJobs(cluster)
+	if clusterName != "" {
+		cluster, cerr := s.store.GetCluster(clusterName)
+		if cerr != nil {
+			http.Error(w, cerr.Error(), http.StatusInternalServerError)
+			return
+		}
+		if cluster != nil {
+			jobs, err = s.store.ListJobs(cluster.ID)
+		}
 	} else {
 		jobs, err = s.store.ListAllJobs()
 	}
@@ -860,10 +1102,24 @@ func (s *Server) handleMetricsAPI(w http.ResponseWriter, r *http.Request, cluste
 		return
 	}
 
+	// Resolve cluster name to ID for metrics query
+	var cluster *domain.Cluster
+	clusterID := ""
+	if s.store != nil {
+		cluster, _ = s.store.GetCluster(clusterName)
+		if cluster != nil {
+			clusterID = cluster.ID
+		}
+	}
+
 	now := time.Now()
 	tr := store.TimeRange{
 		From: now.Add(-time.Hour),
 		To:   now,
+	}
+
+	if cluster != nil && tr.From.Before(cluster.LaunchedAt) {
+		tr.From = cluster.LaunchedAt
 	}
 
 	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
@@ -882,9 +1138,22 @@ func (s *Server) handleMetricsAPI(w http.ResponseWriter, r *http.Request, cluste
 		}
 	}
 
-	points, err := s.analytics.QueryMetricsByCluster(r.Context(), clusterName, tr)
-	if err != nil {
-		s.logger.Error("failed to query metrics", "cluster", clusterName, "error", err)
+	// Ensure from is never before cluster launch, even after user-provided override
+	if cluster != nil && tr.From.Before(cluster.LaunchedAt) {
+		tr.From = cluster.LaunchedAt
+	}
+
+	var points []store.MetricPoint
+	var queryErr error
+
+	if nodeID := r.URL.Query().Get("node_id"); nodeID != "" {
+		points, queryErr = s.analytics.QueryMetrics(r.Context(), nodeID, tr)
+	} else if clusterID != "" {
+		points, queryErr = s.analytics.QueryMetricsByCluster(r.Context(), clusterID, tr)
+	}
+
+	if queryErr != nil {
+		s.logger.Error("failed to query metrics", "cluster", clusterName, "error", queryErr)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

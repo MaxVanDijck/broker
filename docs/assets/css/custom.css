@@ -1,0 +1,18 @@
+:root {
+  color-scheme: dark;
+}
+
+html {
+  color-scheme: dark;
+}
+
+/* 2-column feature grid on homepage */
+.hextra-feature-grid {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+
+@media (max-width: 640px) {
+  .hextra-feature-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

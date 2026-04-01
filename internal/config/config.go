@@ -24,8 +24,8 @@ type StateConfig struct {
 }
 
 type AnalyticsConfig struct {
-	Backend string `yaml:"backend,omitempty"` // "chdb" (default) or "clickhouse"
-	DSN     string `yaml:"dsn,omitempty"`     // clickhouse connection string
+	Backend string `yaml:"backend,omitempty"` // "sqlite" (default), "chdb", or "clickhouse"
+	DSN     string `yaml:"dsn,omitempty"`     // clickhouse connection string; for sqlite, path to db file
 }
 
 func DefaultConfig() *Config {
@@ -37,7 +37,7 @@ func DefaultConfig() *Config {
 			Backend: "sqlite",
 		},
 		Analytics: AnalyticsConfig{
-			Backend: "noop",
+			Backend: "sqlite",
 		},
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -19,11 +20,12 @@ import (
 
 func launchCmd() *cobra.Command {
 	var (
-		clusterName string
-		gpus        string
-		cloud       string
-		workdirFlag string
-		detach      bool
+		clusterName  string
+		gpus         string
+		cloud        string
+		workdirFlag  string
+		detach       bool
+		autostopFlag time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -61,9 +63,11 @@ func launchCmd() *cobra.Command {
 			pbTask := taskToProto(task)
 			pbTask.Workdir = workdirID
 
+			autostopMinutes := int32(autostopFlag.Minutes())
 			resp, err := c.Broker.Launch(context.Background(), connect.NewRequest(&brokerpb.LaunchRequest{
-				ClusterName: clusterName,
-				Task:        pbTask,
+				ClusterName:           clusterName,
+				Task:                  pbTask,
+				IdleMinutesToAutostop: autostopMinutes,
 			}))
 			if err != nil {
 				return fmt.Errorf("launch failed: %w", err)
@@ -84,6 +88,7 @@ func launchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cloud, "cloud", "", "Cloud provider")
 	cmd.Flags().StringVarP(&workdirFlag, "workdir", "w", "", "Working directory to upload")
 	cmd.Flags().BoolVarP(&detach, "detach-run", "d", false, "Detach after job submission")
+	cmd.Flags().DurationVar(&autostopFlag, "autostop", 30*time.Minute, "Idle duration before auto-teardown (0 to disable)")
 
 	return cmd
 }

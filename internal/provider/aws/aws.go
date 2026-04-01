@@ -36,7 +36,8 @@ const (
 	agentBinaryPath         = "/agent/v1/binary"
 	selfTerminateAfterAgent = "30m"
 
-	amiSSMParameter = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+	amiSSMParameterDefault = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+	amiSSMParameterGPU     = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-ubuntu-22.04/latest/ami-id"
 )
 
 var acceleratorInstanceTypes = map[string]string{
@@ -103,12 +104,13 @@ func (p *Provider) Launch(ctx context.Context, cluster *domain.Cluster, task *do
 		return nil, fmt.Errorf("ensure security group: %w", err)
 	}
 
-	amiID, err := p.resolveAMI(ctx, ssmClient)
+	instanceType := resolveInstanceType(task)
+	needsGPU := hasGPU(task)
+
+	amiID, err := p.resolveAMI(ctx, ssmClient, needsGPU)
 	if err != nil {
 		return nil, fmt.Errorf("resolve AMI: %w", err)
 	}
-
-	instanceType := resolveInstanceType(task)
 	diskSize := resolveDiskSize(task)
 	numNodes := cluster.NumNodes
 	if numNodes <= 0 {
@@ -435,12 +437,24 @@ func (p *Provider) deleteSecurityGroup(ctx context.Context, client *ec2.Client, 
 	return nil
 }
 
-func (p *Provider) resolveAMI(ctx context.Context, client *ssm.Client) (string, error) {
+func (p *Provider) resolveAMI(ctx context.Context, client *ssm.Client, needsGPU bool) (string, error) {
+	param := amiSSMParameterDefault
+	if needsGPU {
+		param = amiSSMParameterGPU
+	}
+
 	result, err := client.GetParameter(ctx, &ssm.GetParameterInput{
-		Name: aws.String(amiSSMParameter),
+		Name: aws.String(param),
 	})
+	if err != nil && needsGPU {
+		// Fall back to default AMI if GPU AMI parameter doesn't exist
+		p.logger.Warn("gpu ami not found via ssm, falling back to default", "error", err)
+		result, err = client.GetParameter(ctx, &ssm.GetParameterInput{
+			Name: aws.String(amiSSMParameterDefault),
+		})
+	}
 	if err != nil {
-		return "", fmt.Errorf("get AMI from SSM parameter %s: %w", amiSSMParameter, err)
+		return "", fmt.Errorf("get AMI from SSM: %w", err)
 	}
 
 	return aws.ToString(result.Parameter.Value), nil
@@ -487,6 +501,23 @@ func resolveInstanceType(task *domain.TaskSpec) string {
 		}
 	}
 	return defaultInstanceType
+}
+
+func hasGPU(task *domain.TaskSpec) bool {
+	if task == nil || task.Resources == nil {
+		return false
+	}
+	if task.Resources.Accelerators != "" {
+		return true
+	}
+	// Check if the instance type is a known GPU instance
+	it := task.Resources.InstanceType
+	for _, prefix := range []string{"p2.", "p3.", "p4d.", "p4de.", "p5.", "g4dn.", "g5.", "g5g.", "g6.", "g6e.", "gr6."} {
+		if strings.HasPrefix(it, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func MapAcceleratorToInstanceType(accelerator string) (string, bool) {

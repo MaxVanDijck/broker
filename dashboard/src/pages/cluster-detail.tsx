@@ -1,5 +1,5 @@
-import { useParams, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, useCallback } from "react";
 import { broker } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
@@ -44,6 +44,7 @@ function formatBytes(bytes: number): string {
 
 export function ClusterDetailPage() {
   const { name } = useParams({ from: "/clusters/$name" });
+  const queryClient = useQueryClient();
 
   const { data: statusData } = useQuery({
     queryKey: ["cluster", name],
@@ -111,6 +112,8 @@ export function ClusterDetailPage() {
                   onClick={async () => {
                     if (confirm(`Tear down cluster ${name}?`)) {
                       await broker.down({ clusterName: name });
+                      queryClient.invalidateQueries({ queryKey: ["cluster", name] });
+                      queryClient.invalidateQueries({ queryKey: ["clusters"] });
                     }
                   }}
                   variant="danger"
@@ -150,6 +153,8 @@ export function ClusterDetailPage() {
 }
 
 function NodesSection({ clusterName }: { clusterName: string }) {
+  const navigate = useNavigate();
+
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[] }>({
     queryKey: ["cluster-nodes", clusterName],
     queryFn: () =>
@@ -172,7 +177,7 @@ function NodesSection({ clusterName }: { clusterName: string }) {
         return r.json();
       });
     },
-    refetchInterval: 30000,
+    refetchInterval: 15000,
   });
 
   const nodes = nodesData?.nodes ?? [];
@@ -205,7 +210,16 @@ function NodesSection({ clusterName }: { clusterName: string }) {
             </thead>
             <tbody className="divide-y divide-neutral-800">
               {nodes.map((node) => (
-                <tr key={node.node_id} className="transition-colors hover:bg-neutral-900/50">
+                <tr
+                  key={node.node_id}
+                  onClick={() =>
+                    navigate({
+                      to: "/clusters/$name/nodes/$nodeId",
+                      params: { name: clusterName, nodeId: node.node_id },
+                    })
+                  }
+                  className="cursor-pointer transition-colors hover:bg-neutral-900/50"
+                >
                   <td className="px-4 py-3 font-mono text-sm text-white">{node.node_id}</td>
                   <td className="px-4 py-3 text-neutral-400">{node.hostname || "-"}</td>
                   <td className="px-4 py-3">

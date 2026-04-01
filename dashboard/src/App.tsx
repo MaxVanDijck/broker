@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { ClustersPage } from "@/pages/clusters";
 import { ClusterDetailPage } from "@/pages/cluster-detail";
+import { NodeDetailPage } from "@/pages/node-detail";
 import { JobsPage } from "@/pages/jobs";
 import { useServerEvents } from "@/lib/use-events";
 
@@ -27,13 +28,19 @@ const clusterDetailRoute = createRoute({
   component: ClusterDetailPage,
 });
 
+const nodeDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/clusters/$name/nodes/$nodeId",
+  component: NodeDetailPage,
+});
+
 const jobsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/jobs",
   component: JobsPage,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, clusterDetailRoute, jobsRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, clusterDetailRoute, nodeDetailRoute, jobsRoute]);
 const router = createRouter({ routeTree });
 
 declare module "@tanstack/react-router" {

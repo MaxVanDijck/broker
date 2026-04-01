@@ -26,4 +26,7 @@ func init() {
 	RegisterAnalyticsBackend("clickhouse", func(dsn string) (AnalyticsStore, error) {
 		return NewClickHouse(dsn)
 	})
+	RegisterAnalyticsBackend("sqlite", func(dsn string) (AnalyticsStore, error) {
+		return NewSQLiteAnalytics(dsn)
+	})
 }

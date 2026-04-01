@@ -178,6 +178,9 @@ func TestExecDispatchesToAgent(t *testing.T) {
 	if job.Status != domain.JobStatusPending {
 		t.Errorf("expected job status PENDING, got %s", job.Status)
 	}
+	if job.ClusterID != "c-1" {
+		t.Errorf("expected cluster_id c-1, got %s", job.ClusterID)
+	}
 }
 
 func TestJobUpdateFlowsBackToServer(t *testing.T) {
@@ -308,6 +311,9 @@ func TestLaunchCreatesClusterAndJob(t *testing.T) {
 	if cluster == nil {
 		t.Fatal("cluster not found in store")
 	}
+	if cluster.ID == "" {
+		t.Fatal("expected non-empty cluster ID")
+	}
 
 	// Then a job is created in the store
 	job, err := env.store.GetJob(resp.Msg.JobId)
@@ -322,6 +328,9 @@ func TestLaunchCreatesClusterAndJob(t *testing.T) {
 	}
 	if job.Name != "train" {
 		t.Errorf("expected job name 'train', got %s", job.Name)
+	}
+	if job.ClusterID != cluster.ID {
+		t.Errorf("expected job cluster_id %s, got %s", cluster.ID, job.ClusterID)
 	}
 
 	// Then the agent receives the SubmitJob
@@ -515,10 +524,10 @@ func (s *stubAnalyticsStore) InsertMetrics(_ context.Context, points []store.Met
 	return nil
 }
 
-func (s *stubAnalyticsStore) QueryMetricsByCluster(_ context.Context, clusterName string, tr store.TimeRange) ([]store.MetricPoint, error) {
+func (s *stubAnalyticsStore) QueryMetricsByCluster(_ context.Context, clusterID string, tr store.TimeRange) ([]store.MetricPoint, error) {
 	var result []store.MetricPoint
 	for _, p := range s.metrics {
-		if p.ClusterName == clusterName && !p.Timestamp.Before(tr.From) && !p.Timestamp.After(tr.To) {
+		if p.ClusterID == clusterID && !p.Timestamp.Before(tr.From) && !p.Timestamp.After(tr.To) {
 			result = append(result, p)
 		}
 	}
@@ -534,7 +543,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 			{
 				Timestamp:     now.Add(-30 * time.Minute),
 				NodeID:        "node-1",
-				ClusterName:   "test-cluster",
+				ClusterID:     "cid-1",
 				CPUPercent:    42.5,
 				MemoryPercent: 65.2,
 				DiskUsedBytes: 1024 * 1024 * 100,
@@ -542,7 +551,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 			{
 				Timestamp:     now.Add(-15 * time.Minute),
 				NodeID:        "node-1",
-				ClusterName:   "test-cluster",
+				ClusterID:     "cid-1",
 				CPUPercent:    55.0,
 				MemoryPercent: 70.1,
 				DiskUsedBytes: 1024 * 1024 * 110,
@@ -550,14 +559,23 @@ func TestHandleClusterMetrics(t *testing.T) {
 			{
 				Timestamp:     now.Add(-10 * time.Minute),
 				NodeID:        "node-2",
-				ClusterName:   "other-cluster",
+				ClusterID:     "cid-2",
 				CPUPercent:    20.0,
 				MemoryPercent: 30.0,
 				DiskUsedBytes: 1024 * 1024 * 50,
 			},
 		}
 
+		// Create a state store with the cluster so the server can resolve name -> ID
+		stateStore, err := store.NewSQLite(":memory:")
+		if err != nil {
+			t.Fatalf("create sqlite: %v", err)
+		}
+		defer stateStore.Close()
+		stateStore.CreateCluster(&domain.Cluster{ID: "cid-1", Name: "test-cluster", Status: domain.ClusterStatusUp})
+
 		srv := &Server{
+			store:     stateStore,
 			analytics: analytics,
 			logger:    slog.Default(),
 		}
@@ -636,20 +654,28 @@ func TestHandleClusterMetrics(t *testing.T) {
 
 		analytics.metrics = []store.MetricPoint{
 			{
-				Timestamp:   now.Add(-2 * time.Hour),
-				NodeID:      "node-1",
-				ClusterName: "test-cluster",
-				CPUPercent:  10.0,
+				Timestamp:  now.Add(-2 * time.Hour),
+				NodeID:     "node-1",
+				ClusterID:  "cid-1",
+				CPUPercent: 10.0,
 			},
 			{
-				Timestamp:   now.Add(-30 * time.Minute),
-				NodeID:      "node-1",
-				ClusterName: "test-cluster",
-				CPUPercent:  50.0,
+				Timestamp:  now.Add(-30 * time.Minute),
+				NodeID:     "node-1",
+				ClusterID:  "cid-1",
+				CPUPercent: 50.0,
 			},
 		}
 
+		stateStore, err := store.NewSQLite(":memory:")
+		if err != nil {
+			t.Fatalf("create sqlite: %v", err)
+		}
+		defer stateStore.Close()
+		stateStore.CreateCluster(&domain.Cluster{ID: "cid-1", Name: "test-cluster", Status: domain.ClusterStatusUp})
+
 		srv := &Server{
+			store:     stateStore,
 			analytics: analytics,
 			logger:    slog.Default(),
 		}
