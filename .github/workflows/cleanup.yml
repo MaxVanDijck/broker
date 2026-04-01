@@ -1,4 +1,4 @@
-name: cleanup
+name: e2e-cloud-cleanup
 
 # Runs hourly. Terminates ALL EC2 instances and deletes ALL non-default
 # security groups in the dedicated test account. This account exists

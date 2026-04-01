@@ -35,8 +35,12 @@ proto:
 test:
 	go test ./... -race -count=1
 
+test-helm:
+	./scripts/test-helm.sh
+
 lint:
 	go vet ./...
+	helm lint charts/broker/ --strict
 
 fmt:
 	gofmt -s -w .

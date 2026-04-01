@@ -117,68 +117,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-
-      - uses: oven-sh/setup-bun@v2
-
-      - name: build docker image
+      - name: install kind
         run: |
-          docker build -t broker:test .
+          curl -sLo ./kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
 
-      - name: create kind cluster
-        uses: helm/kind-action@v1
-
-      - name: load image into kind
-        run: |
-          kind load docker-image broker:test
-
-      - name: install helm chart
-        run: |
-          helm install broker charts/broker/ \
-            --set image.repository=broker \
-            --set image.tag=test \
-            --set image.pullPolicy=Never \
-            --set persistence.enabled=false \
-            --wait \
-            --timeout 120s
-
-      - name: verify pod is running
-        run: |
-          kubectl get pods -l app.kubernetes.io/name=broker
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=broker --timeout=60s
-
-      - name: check health endpoint
-        run: |
-          kubectl port-forward svc/broker 8080:8080 &
-          sleep 3
-          curl -sf http://localhost:8080/healthz
-          echo ""
-          echo "healthz OK"
-
-      - name: check api endpoint
-        run: |
-          curl -sf -X POST http://localhost:8080/broker.v1.BrokerService/Status \
-            -H 'Content-Type: application/json' \
-            -d '{}' | jq .
-          echo "API OK"
-
-      - name: check dashboard
-        run: |
-          curl -sf http://localhost:8080/ | head -5
-          echo "Dashboard OK"
-
-      - name: run helm test
-        run: |
-          helm test broker
+      - name: run helm tests
+        run: ./scripts/test-helm.sh
 
       - name: show logs on failure
         if: failure()
         run: |
           echo "=== Pod status ==="
-          kubectl get pods -o wide
+          kubectl get pods -o wide 2>/dev/null || true
           echo "=== Pod describe ==="
-          kubectl describe pods -l app.kubernetes.io/name=broker
+          kubectl describe pods -l app.kubernetes.io/name=broker 2>/dev/null || true
           echo "=== Pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=broker --tail=50
+          kubectl logs -l app.kubernetes.io/name=broker --tail=50 2>/dev/null || true
