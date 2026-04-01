@@ -12,26 +12,21 @@ broker consists of three components:
 | **Server** | `broker-server` | Control plane. Manages clusters, jobs, and agent connections. Single port serves the API, agent tunnel, and dashboard. Auto-started by the CLI for local development. |
 | **Agent** | `broker-agent` | Runs on provisioned nodes. Executes jobs, streams logs, provides SSH access. Connects outbound to the server via WebSocket. |
 
-```
-User                          Server                         Node
- |                              |                              |
- |  broker launch task.yaml     |                              |
- | ---------------------------> |                              |
- |  (auto-starts server)        |                              |
- |  (ConnectRPC over HTTP)      |                              |
- |                              |  provision VM via cloud API  |
- |                              | ---------------------------> |
- |                              |                              |
- |                              |  <--- WebSocket connect ---  |
- |                              |       (agent registers)      |
- |                              |                              |
- |                              |  --- SubmitJob ---------->   |
- |                              |                              |
- |                              |  <--- LogBatch (stream) ---  |
- |                              |  <--- JobUpdate ----------   |
- |                              |                              |
- |  broker ssh my-cluster       |                              |
- | ---------------------------> | --- SSH via tunnel ---------> |
+```mermaid
+sequenceDiagram
+    participant User
+    participant Server
+    participant Node
+
+    User->>Server: broker launch task.yaml
+    Note over User,Server: Auto-starts server<br/>ConnectRPC over HTTP
+    Server->>Node: Provision VM via cloud API
+    Node->>Server: WebSocket connect (agent registers)
+    Server->>Node: SubmitJob
+    Node->>Server: LogBatch (stream)
+    Node->>Server: JobUpdate
+    User->>Server: broker ssh my-cluster
+    Server->>Node: SSH via WebSocket tunnel
 ```
 
 ## Requirements

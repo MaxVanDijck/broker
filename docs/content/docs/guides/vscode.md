@@ -42,12 +42,22 @@ You can also launch VS Code directly from the dashboard with one click.
 
 ## How it works
 
-```
-VS Code -> ssh dev-box.broker
-           -> ProxyCommand: broker ssh --stdio --hostname-suffix .broker dev-box.broker
-              -> broker CLI connects to server via WebSocket
-                 -> server routes to agent WebSocket tunnel
-                    -> agent's built-in SSH server (port 2222)
+```mermaid
+sequenceDiagram
+    participant VSCode as VS Code
+    participant SSH as ssh dev-box.broker
+    participant CLI as broker CLI (ProxyCommand)
+    participant Server
+    participant Agent as Agent SSH server (port 2222)
+
+    VSCode->>SSH: ssh dev-box.broker
+    SSH->>CLI: broker ssh --stdio dev-box.broker
+    CLI->>Server: WebSocket connection
+    Server->>Agent: Route via WebSocket tunnel
+    Agent-->>Server: SSH session established
+    Server-->>CLI: Tunnel ready
+    CLI-->>SSH: stdio passthrough
+    SSH-->>VSCode: Remote SSH connected
 ```
 
 The agent's SSH server supports:

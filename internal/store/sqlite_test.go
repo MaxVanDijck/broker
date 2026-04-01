@@ -55,7 +55,7 @@ func TestSQLiteStore_CreateCluster(t *testing.T) {
 		}
 	})
 
-	t.Run("given a cluster exists, when creating with the same name, then it returns an error", func(t *testing.T) {
+	t.Run("given a cluster exists, when creating another with the same name but different ID, then it succeeds", func(t *testing.T) {
 		s := newTestStore(t)
 
 		cluster := &domain.Cluster{Name: "dup-cluster", ID: "c-1"}
@@ -64,8 +64,8 @@ func TestSQLiteStore_CreateCluster(t *testing.T) {
 		}
 
 		dup := &domain.Cluster{Name: "dup-cluster", ID: "c-2"}
-		if err := s.CreateCluster(dup); err == nil {
-			t.Fatal("expected error for duplicate cluster name, got nil")
+		if err := s.CreateCluster(dup); err != nil {
+			t.Fatalf("expected duplicate name to succeed with different ID, got: %v", err)
 		}
 	})
 

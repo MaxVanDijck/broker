@@ -7,11 +7,14 @@ A cluster is a group of one or more nodes managed by broker. Each node runs a `b
 
 ## Lifecycle
 
-```
-INIT -> UP -> TERMINATING -> TERMINATED
-         |
-         v
-       STOPPED -> (start) -> UP
+```mermaid
+stateDiagram-v2
+    [*] --> INIT
+    INIT --> UP: Agent connects
+    UP --> STOPPED: broker stop
+    STOPPED --> UP: broker start
+    UP --> TERMINATING: broker down
+    TERMINATING --> TERMINATED: Resources released
 ```
 
 | Status | Description |

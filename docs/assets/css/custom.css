@@ -16,3 +16,12 @@ html {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Mermaid dark theme overrides */
+.mermaid {
+  background: transparent !important;
+}
+
+.mermaid svg {
+  max-width: 100%;
+}

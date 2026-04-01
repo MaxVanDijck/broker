@@ -27,12 +27,6 @@ make build-server  # bin/broker-server
 make build-agent   # bin/broker-agent
 ```
 
-## Go install
-
-```bash
-go install github.com/MaxVanDijck/broker/cmd/broker@latest
-```
-
 ## Verify installation
 
 ```bash
