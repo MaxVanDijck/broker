@@ -88,9 +88,40 @@ func (p *Provider) Name() domain.CloudProvider {
 	return domain.CloudAWS
 }
 
-func (p *Provider) Launch(ctx context.Context, cluster *domain.Cluster, task *domain.TaskSpec) ([]provider.NodeInfo, error) {
-	region := resolveRegion(cluster, task)
+// fallbackRegions is the ordered list of regions to try when capacity is
+// unavailable. The user's preferred region (if any) is prepended at runtime.
+var fallbackRegions = []string{
+	"us-east-1",
+	"us-west-2",
+	"us-east-2",
+	"eu-west-1",
+	"ap-southeast-1",
+}
 
+func (p *Provider) Launch(ctx context.Context, cluster *domain.Cluster, task *domain.TaskSpec) ([]provider.NodeInfo, error) {
+	regions := buildRegionList(cluster, task)
+
+	var lastErr error
+	for _, region := range regions {
+		nodes, err := p.launchInRegion(ctx, cluster, task, region)
+		if err == nil {
+			cluster.Region = region
+			return nodes, nil
+		}
+		if isCapacityError(err) {
+			p.logger.Warn("region capacity unavailable, trying next region",
+				"region", region,
+				"error", err,
+			)
+			lastErr = err
+			continue
+		}
+		return nil, err
+	}
+	return nil, fmt.Errorf("all regions exhausted: %w", lastErr)
+}
+
+func (p *Provider) launchInRegion(ctx context.Context, cluster *domain.Cluster, task *domain.TaskSpec, region string) ([]provider.NodeInfo, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
@@ -211,6 +242,43 @@ func (p *Provider) Launch(ctx context.Context, cluster *domain.Cluster, task *do
 	}
 
 	return nodes, nil
+}
+
+// buildRegionList returns the ordered list of regions to attempt. If the user
+// specified a region it comes first, followed by the remaining fallback regions
+// (deduped). If no region was specified, fallbackRegions is returned as-is.
+func buildRegionList(cluster *domain.Cluster, task *domain.TaskSpec) []string {
+	preferred := preferredRegion(cluster, task)
+	if preferred == "" {
+		return fallbackRegions
+	}
+
+	regions := []string{preferred}
+	for _, r := range fallbackRegions {
+		if r != preferred {
+			regions = append(regions, r)
+		}
+	}
+	return regions
+}
+
+func preferredRegion(cluster *domain.Cluster, task *domain.TaskSpec) string {
+	if cluster.Region != "" {
+		return cluster.Region
+	}
+	if task != nil && task.Resources != nil && task.Resources.Region != "" {
+		return task.Resources.Region
+	}
+	return ""
+}
+
+// isCapacityError returns true for AWS errors that indicate the region/AZ
+// cannot fulfil the request and a different region should be tried.
+func isCapacityError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "InsufficientInstanceCapacity") ||
+		strings.Contains(msg, "InstanceLimitExceeded") ||
+		strings.Contains(msg, "Unsupported")
 }
 
 func (p *Provider) Stop(ctx context.Context, cluster *domain.Cluster) error {
@@ -502,6 +570,10 @@ func resolveInstanceType(task *domain.TaskSpec) string {
 			return it
 		}
 	}
+	// The server's Launch handler runs the optimizer before calling the
+	// provider, so Resources.InstanceType is normally populated by the
+	// time we get here. This fallback only fires for direct provider
+	// calls outside the server path (tests, scripts, etc.).
 	return defaultInstanceType
 }
 

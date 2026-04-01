@@ -14,7 +14,9 @@ import (
 
 	"broker/internal/dashboard"
 	"broker/internal/domain"
+	"broker/internal/optimizer"
 	"broker/internal/provider"
+	"broker/internal/provider/aws"
 	"broker/internal/store"
 	agentpb "broker/proto/agentpb"
 	brokerpb "broker/proto/brokerpb"
@@ -509,6 +511,49 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		}
 	}
 
+	// Run the cost optimizer to select the cheapest instance type when the
+	// user hasn't explicitly set one. The optimizer considers accelerators,
+	// CPU, and memory requirements against the instance catalog and pricing.
+	var selectedInstanceType string
+	var selectedHourlyPrice float64
+
+	if cluster.Resources != nil && cluster.Resources.InstanceType == "" {
+		hasRequirements := cluster.Resources.Accelerators != "" ||
+			cluster.Resources.CPUs != "" ||
+			cluster.Resources.Memory != ""
+		if hasRequirements {
+			recs, err := optimizer.Optimize(optimizer.Requirements{
+				Accelerators: cluster.Resources.Accelerators,
+				CPUs:         cluster.Resources.CPUs,
+				Memory:       cluster.Resources.Memory,
+				UseSpot:      cluster.Resources.UseSpot,
+			})
+			if err != nil {
+				s.logger.Warn("optimizer failed, falling back to default resolution", "error", err)
+			} else if len(recs) > 0 {
+				selectedInstanceType = recs[0].InstanceType
+				selectedHourlyPrice = recs[0].HourlyPrice
+				cluster.Resources.InstanceType = selectedInstanceType
+				s.logger.Info("optimizer selected instance",
+					"instance_type", selectedInstanceType,
+					"hourly_price", selectedHourlyPrice,
+					"cluster", clusterName,
+				)
+			}
+		}
+	}
+
+	// If instance type is explicitly set, look up its price for the response.
+	if cluster.Resources != nil && cluster.Resources.InstanceType != "" && selectedHourlyPrice == 0 {
+		selectedInstanceType = cluster.Resources.InstanceType
+		if price, ok := aws.OnDemandPricing[selectedInstanceType]; ok {
+			selectedHourlyPrice = price
+			if cluster.Resources.UseSpot {
+				selectedHourlyPrice *= 0.35
+			}
+		}
+	}
+
 	existing, err := s.store.GetCluster(clusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check cluster: %w", err))
@@ -555,6 +600,16 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 				nodes, err := prov.Launch(context.Background(), c, task)
 				if err != nil {
 					s.logger.Error("cloud provisioning failed", "cluster", clusterName, "error", err)
+					c.Status = domain.ClusterStatusTerminated
+					s.store.UpdateCluster(c)
+					s.events.Publish(Event{
+						Type: "cluster_update",
+						Data: map[string]string{
+							"cluster_name": clusterName,
+							"cluster_id":   launchClusterID,
+							"status":       string(domain.ClusterStatusTerminated),
+						},
+					})
 					return
 				}
 				if len(nodes) > 0 {
@@ -605,10 +660,18 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		s.pendingMu.Unlock()
 	}
 
+	region := cluster.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+
 	return connect.NewResponse(&brokerpb.LaunchResponse{
-		ClusterName: clusterName,
-		JobId:       jobID,
-		HeadIp:      cluster.HeadIP,
+		ClusterName:  clusterName,
+		JobId:        jobID,
+		HeadIp:       cluster.HeadIP,
+		InstanceType: selectedInstanceType,
+		HourlyPrice:  selectedHourlyPrice,
+		Region:       region,
 	}), nil
 }
 

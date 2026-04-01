@@ -51,6 +51,9 @@ message LaunchResponse {
   string cluster_name = 1;
   string job_id = 2;
   string head_ip = 3;
+  string instance_type = 4;
+  double hourly_price = 5;
+  string region = 6;
 }
 
 message ClusterRequest {

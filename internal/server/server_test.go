@@ -482,6 +482,68 @@ func TestJobFailedUpdateSetsEndedAt(t *testing.T) {
 	}
 }
 
+func TestDownTeardownFlow(t *testing.T) {
+	// Given a server with a cluster in UP status
+	env := setupTestEnv(t)
+
+	err := env.store.CreateCluster(&domain.Cluster{
+		ID:     "c-down",
+		Name:   "down-cluster",
+		Status: domain.ClusterStatusUp,
+		UserID: "default",
+	})
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// When Down is called for the cluster
+	resp, err := env.client.Down(ctx, connect.NewRequest(&brokerpb.ClusterRequest{
+		ClusterName: "down-cluster",
+	}))
+	if err != nil {
+		t.Fatalf("down: %v", err)
+	}
+
+	// Then the response status is TERMINATING
+	if resp.Msg.Status != string(domain.ClusterStatusTerminating) {
+		t.Errorf("expected status TERMINATING, got %s", resp.Msg.Status)
+	}
+	if resp.Msg.ClusterName != "down-cluster" {
+		t.Errorf("expected cluster name 'down-cluster', got %s", resp.Msg.ClusterName)
+	}
+
+	// Wait for the async teardown goroutine to complete (no cloud provider
+	// is registered, so it just transitions TERMINATING -> TERMINATED)
+	time.Sleep(200 * time.Millisecond)
+
+	// Then the cluster status in the store is TERMINATED
+	cluster, err := env.store.GetClusterByID("c-down")
+	if err != nil {
+		t.Fatalf("get cluster by id: %v", err)
+	}
+	if cluster == nil {
+		t.Fatal("cluster not found by ID")
+	}
+	if cluster.Status != domain.ClusterStatusTerminated {
+		t.Errorf("expected cluster status TERMINATED, got %s", cluster.Status)
+	}
+
+	// When Down is called again for the same cluster name
+	_, err = env.client.Down(ctx, connect.NewRequest(&brokerpb.ClusterRequest{
+		ClusterName: "down-cluster",
+	}))
+
+	// Then a NotFound error is returned (GetCluster skips terminated clusters)
+	if err == nil {
+		t.Fatal("expected error for terminated cluster")
+	}
+	if connectErr := new(connect.Error); !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Errorf("expected CodeNotFound, got %v", err)
+	}
+}
+
 func TestGetAgentByCluster(t *testing.T) {
 	// Given a tunnel handler with two agents on different clusters
 	env := setupTestEnv(t)

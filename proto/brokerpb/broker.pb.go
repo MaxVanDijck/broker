@@ -318,6 +318,9 @@ type LaunchResponse struct {
 	ClusterName   string                 `protobuf:"bytes,1,opt,name=cluster_name,json=clusterName,proto3" json:"cluster_name,omitempty"`
 	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	HeadIp        string                 `protobuf:"bytes,3,opt,name=head_ip,json=headIp,proto3" json:"head_ip,omitempty"`
+	InstanceType  string                 `protobuf:"bytes,4,opt,name=instance_type,json=instanceType,proto3" json:"instance_type,omitempty"`
+	HourlyPrice   float64                `protobuf:"fixed64,5,opt,name=hourly_price,json=hourlyPrice,proto3" json:"hourly_price,omitempty"`
+	Region        string                 `protobuf:"bytes,6,opt,name=region,proto3" json:"region,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -369,6 +372,27 @@ func (x *LaunchResponse) GetJobId() string {
 func (x *LaunchResponse) GetHeadIp() string {
 	if x != nil {
 		return x.HeadIp
+	}
+	return ""
+}
+
+func (x *LaunchResponse) GetInstanceType() string {
+	if x != nil {
+		return x.InstanceType
+	}
+	return ""
+}
+
+func (x *LaunchResponse) GetHourlyPrice() float64 {
+	if x != nil {
+		return x.HourlyPrice
+	}
+	return 0
+}
+
+func (x *LaunchResponse) GetRegion() string {
+	if x != nil {
+		return x.Region
 	}
 	return ""
 }
@@ -996,11 +1020,14 @@ const file_proto_broker_proto_rawDesc = "" +
 	"\fcluster_name\x18\x02 \x01(\tR\vclusterName\x12$\n" +
 	"\x0eretry_until_up\x18\x03 \x01(\bR\fretryUntilUp\x127\n" +
 	"\x18idle_minutes_to_autostop\x18\x04 \x01(\x05R\x15idleMinutesToAutostop\x12\x16\n" +
-	"\x06dryrun\x18\x05 \x01(\bR\x06dryrun\"c\n" +
+	"\x06dryrun\x18\x05 \x01(\bR\x06dryrun\"\xc3\x01\n" +
 	"\x0eLaunchResponse\x12!\n" +
 	"\fcluster_name\x18\x01 \x01(\tR\vclusterName\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x17\n" +
-	"\ahead_ip\x18\x03 \x01(\tR\x06headIp\"3\n" +
+	"\ahead_ip\x18\x03 \x01(\tR\x06headIp\x12#\n" +
+	"\rinstance_type\x18\x04 \x01(\tR\finstanceType\x12!\n" +
+	"\fhourly_price\x18\x05 \x01(\x01R\vhourlyPrice\x12\x16\n" +
+	"\x06region\x18\x06 \x01(\tR\x06region\"3\n" +
 	"\x0eClusterRequest\x12!\n" +
 	"\fcluster_name\x18\x01 \x01(\tR\vclusterName\"L\n" +
 	"\x0fClusterResponse\x12!\n" +

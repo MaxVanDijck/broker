@@ -73,7 +73,20 @@ func launchCmd() *cobra.Command {
 				return fmt.Errorf("launch failed: %w", err)
 			}
 
-			fmt.Printf("Cluster %s launched\n", resp.Msg.ClusterName)
+			if resp.Msg.InstanceType != "" && resp.Msg.HourlyPrice > 0 {
+				region := resp.Msg.Region
+				if region == "" {
+					region = "us-east-1"
+				}
+				spot := ""
+				if task.Resources != nil && task.Resources.UseSpot {
+					spot = " spot"
+				}
+				fmt.Printf("Cluster %s launched on %s%s ($%.2f/hr) in %s\n",
+					resp.Msg.ClusterName, resp.Msg.InstanceType, spot, resp.Msg.HourlyPrice, region)
+			} else {
+				fmt.Printf("Cluster %s launched\n", resp.Msg.ClusterName)
+			}
 			if resp.Msg.HeadIp != "" {
 				fmt.Printf("Head node: %s\n", resp.Msg.HeadIp)
 			}

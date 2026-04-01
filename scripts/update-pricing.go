@@ -1,3 +1,5 @@
+//go:build ignore
+
 // This script queries the AWS Pricing API and generates a Go source file
 // containing on-demand pricing for all EC2 instance types. Run it before
 // release to bake in current prices:

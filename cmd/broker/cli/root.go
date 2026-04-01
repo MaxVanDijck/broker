@@ -57,6 +57,7 @@ func Root() *cobra.Command {
 		cancelCmd(),
 		sshCmd(),
 		sshConfigCmd(),
+		optimizeCmd(),
 		versionCmd(),
 	)
 
