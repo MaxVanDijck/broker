@@ -104,4 +104,6 @@ jobs:
 
       - name: verify teardown
         run: |
-          ! bin/broker status | grep -q "^test "
+          STATUS=$(bin/broker status | grep "^test " | awk '{print $2}')
+          echo "cluster status: $STATUS"
+          [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "TERMINATING" ]

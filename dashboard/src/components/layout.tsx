@@ -11,8 +11,8 @@ export function Layout() {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="border-b border-neutral-800">
+    <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
+      <header className="sticky top-0 z-10 shrink-0 border-b border-neutral-800 bg-neutral-950">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-8 px-6">
           <Link to="/" className="flex items-center gap-2 font-semibold">
             <Terminal className="h-5 w-5" />
@@ -37,8 +37,10 @@ export function Layout() {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <Outlet />
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

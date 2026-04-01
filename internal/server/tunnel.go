@@ -32,6 +32,7 @@ type TunnelHandler struct {
 	onLogBatch   func(jobID string, batch *pb.LogBatch)
 	onJobUpdate  func(jobID string, update *pb.JobUpdate)
 	onSSHSession func(sessionID string, data []byte, closed bool)
+	onDisconnect func(conn *AgentConnection)
 }
 
 func NewTunnelHandler(logger *slog.Logger) *TunnelHandler {
@@ -47,12 +48,14 @@ func (h *TunnelHandler) SetCallbacks(
 	onLogBatch func(string, *pb.LogBatch),
 	onJobUpdate func(string, *pb.JobUpdate),
 	onSSHSession func(string, []byte, bool),
+	onDisconnect func(*AgentConnection),
 ) {
 	h.onRegister = onRegister
 	h.onHeartbeat = onHeartbeat
 	h.onLogBatch = onLogBatch
 	h.onJobUpdate = onJobUpdate
 	h.onSSHSession = onSSHSession
+	h.onDisconnect = onDisconnect
 }
 
 func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +124,10 @@ func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	delete(h.agents, reg.NodeId)
 	h.mu.Unlock()
+
+	if h.onDisconnect != nil {
+		h.onDisconnect(ac)
+	}
 
 	cancel()
 	t.Close()

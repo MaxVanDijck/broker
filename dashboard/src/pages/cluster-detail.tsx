@@ -48,7 +48,7 @@ export function ClusterDetailPage() {
   const { data: statusData } = useQuery({
     queryKey: ["cluster", name],
     queryFn: () => broker.status({ clusterNames: [name] }),
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const cluster = statusData?.clusters?.[0];
@@ -60,7 +60,7 @@ export function ClusterDetailPage() {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
   });
 
   const workdirPath = nodesData?.workdir_id
@@ -157,7 +157,7 @@ function NodesSection({ clusterName }: { clusterName: string }) {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
   });
 
   const { data: metricsData } = useQuery<{ points: MetricPoint[] }>({
@@ -172,7 +172,7 @@ function NodesSection({ clusterName }: { clusterName: string }) {
         return r.json();
       });
     },
-    refetchInterval: 15000,
+    refetchInterval: 30000,
   });
 
   const nodes = nodesData?.nodes ?? [];

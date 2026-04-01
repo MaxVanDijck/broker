@@ -8,7 +8,7 @@ export function ClustersPage() {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["clusters"],
     queryFn: () => broker.status({}),
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const navigate = useNavigate();

@@ -9,8 +9,9 @@ import { Layout } from "@/components/layout";
 import { ClustersPage } from "@/pages/clusters";
 import { ClusterDetailPage } from "@/pages/cluster-detail";
 import { JobsPage } from "@/pages/jobs";
+import { useServerEvents } from "@/lib/use-events";
 
-const queryClient = new QueryClient();
+export const queryClient = new QueryClient();
 
 const rootRoute = createRootRoute({ component: Layout });
 
@@ -41,9 +42,15 @@ declare module "@tanstack/react-router" {
   }
 }
 
+function EventSubscriber() {
+  useServerEvents();
+  return null;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <EventSubscriber />
       <RouterProvider router={router} />
     </QueryClientProvider>
   );

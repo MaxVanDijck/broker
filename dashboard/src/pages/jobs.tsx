@@ -47,7 +47,7 @@ export function JobsPage() {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["jobs"],
     queryFn: () => fetchJobs(),
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const jobs = data?.jobs ?? [];

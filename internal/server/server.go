@@ -32,6 +32,7 @@ type Server struct {
 	Tunnel      *TunnelHandler
 	logbus      *LogBus
 	sshSessions *sshSessionManager
+	events      *EventBus
 }
 
 func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logger *slog.Logger) *Server {
@@ -43,6 +44,7 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 		Tunnel:      NewTunnelHandler(logger.With("component", "tunnel")),
 		logbus:      NewLogBus(),
 		sshSessions: newSSHSessionManager(),
+		events:      NewEventBus(logger.With("component", "events")),
 	}
 
 	srv.Tunnel.SetCallbacks(
@@ -51,6 +53,7 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 		srv.onAgentLogBatch,
 		srv.onAgentJobUpdate,
 		srv.onSSHSessionData,
+		srv.onAgentDisconnect,
 	)
 
 	return srv
@@ -73,6 +76,9 @@ func (s *Server) Serve(port int) error {
 	// have no self-termination (dead man's switch), leaving an orphaned
 	// instance running indefinitely.
 	mux.HandleFunc("/agent/v1/binary", s.handleAgentBinary)
+
+	// SSE event stream
+	mux.HandleFunc("/api/v1/events", s.handleSSE)
 
 	// REST API
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
@@ -150,6 +156,24 @@ func (s *Server) watchProvisionedCluster(clusterName string, prov provider.Provi
 func (s *Server) onAgentRegister(ac *AgentConnection) {
 	s.logger.Info("agent online", "node_id", ac.NodeID, "cluster", ac.ClusterName)
 	s.trySetClusterUp(ac.ClusterName)
+	s.events.Publish(Event{
+		Type: "node_online",
+		Data: map[string]string{
+			"node_id":      ac.NodeID,
+			"cluster_name": ac.ClusterName,
+		},
+	})
+}
+
+func (s *Server) onAgentDisconnect(ac *AgentConnection) {
+	s.logger.Info("agent offline", "node_id", ac.NodeID, "cluster", ac.ClusterName)
+	s.events.Publish(Event{
+		Type: "node_offline",
+		Data: map[string]string{
+			"node_id":      ac.NodeID,
+			"cluster_name": ac.ClusterName,
+		},
+	})
 }
 
 func (s *Server) trySetClusterUp(clusterName string) {
@@ -160,6 +184,13 @@ func (s *Server) trySetClusterUp(clusterName string) {
 	if cluster.Status != domain.ClusterStatusUp {
 		cluster.Status = domain.ClusterStatusUp
 		s.store.UpdateCluster(cluster)
+		s.events.Publish(Event{
+			Type: "cluster_update",
+			Data: map[string]string{
+				"cluster_name": clusterName,
+				"status":       string(domain.ClusterStatusUp),
+			},
+		})
 	}
 }
 
@@ -258,6 +289,15 @@ func (s *Server) onAgentJobUpdate(jobID string, update *agentpb.JobUpdate) {
 	if err := s.store.UpdateJob(job); err != nil {
 		s.logger.Error("failed to update job state", "job_id", jobID, "error", err)
 	}
+
+	s.events.Publish(Event{
+		Type: "job_update",
+		Data: map[string]string{
+			"job_id":       jobID,
+			"cluster_name": job.ClusterName,
+			"status":       string(job.Status),
+		},
+	})
 }
 
 func (s *Server) dispatchJob(ctx context.Context, clusterName string, jobID string, task *brokerpb.TaskSpec) error {
@@ -511,6 +551,13 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 
 	cluster.Status = domain.ClusterStatusTerminating
 	s.store.UpdateCluster(cluster)
+	s.events.Publish(Event{
+		Type: "cluster_update",
+		Data: map[string]string{
+			"cluster_name": cluster.Name,
+			"status":       string(domain.ClusterStatusTerminating),
+		},
+	})
 
 	// Teardown cloud resources asynchronously so the CLI/dashboard gets
 	// immediate feedback. The cluster transitions TERMINATING -> TERMINATED.
@@ -525,6 +572,13 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 
 		cluster.Status = domain.ClusterStatusTerminated
 		s.store.UpdateCluster(cluster)
+		s.events.Publish(Event{
+			Type: "cluster_update",
+			Data: map[string]string{
+				"cluster_name": cluster.Name,
+				"status":       string(domain.ClusterStatusTerminated),
+			},
+		})
 		s.logger.Info("cluster terminated", "name", cluster.Name)
 	}()
 
