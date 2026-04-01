@@ -7,10 +7,12 @@ import (
 )
 
 type NodeInfo struct {
-	InstanceID string
-	PublicIP   string
-	PrivateIP  string
-	Status     string
+	InstanceID   string
+	PublicIP     string
+	PrivateIP    string
+	Status       string
+	Region       string
+	InstanceType string
 }
 
 type Provider interface {

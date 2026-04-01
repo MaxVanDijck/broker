@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -79,6 +78,7 @@ func (s *Server) Serve(port int) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go s.autostop.Run(ctx)
+	go s.runCostTracker(ctx)
 
 	mux := http.NewServeMux()
 
@@ -102,9 +102,10 @@ func (s *Server) Serve(port int) error {
 
 	// REST API
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
+	mux.HandleFunc("/api/v1/costs", s.handleCostsAPI)
 	mux.HandleFunc("/api/v1/workdir/", s.handleWorkdir)
 	mux.HandleFunc("/api/v1/ssh-setup", s.handleSSHSetup)
-	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxy)
+	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxyOrCosts)
 
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -488,16 +489,33 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		cluster.NumNodes = 1
 	}
 
+	// If the user specified resources (GPUs, instance type, etc.) but no cloud,
+	// default to the first registered cloud provider. This avoids silently
+	// running on a local agent when the user clearly wants cloud resources.
+	if cluster.Cloud == "" && cluster.Resources != nil {
+		needsCloud := cluster.Resources.Accelerators != "" ||
+			cluster.Resources.InstanceType != "" ||
+			cluster.Resources.UseSpot
+		if needsCloud {
+			clouds := s.registry.List()
+			if len(clouds) > 0 {
+				cluster.Cloud = clouds[0]
+				if cluster.Resources != nil {
+					cluster.Resources.Cloud = clouds[0]
+				}
+				s.logger.Info("no cloud specified, defaulting to available provider", "cloud", clouds[0])
+			}
+		}
+	}
+
 	existing, err := s.store.GetCluster(clusterName)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check cluster: %w", err))
 	}
 
-	if existing != nil && (existing.Status == domain.ClusterStatusTerminated || existing.Status == domain.ClusterStatusTerminating) {
-		s.store.DeleteCluster(existing.ID)
-		existing = nil
-	}
-
+	// GetCluster returns only active clusters (not terminated), so if
+	// existing is nil, we create a new one. Old terminated clusters with
+	// the same name stay in the DB as history.
 	if existing == nil {
 		if err := s.store.CreateCluster(cluster); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to store cluster: %w", err))
@@ -540,6 +558,12 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 				}
 				if len(nodes) > 0 {
 					c.HeadIP = nodes[0].PublicIP
+					if nodes[0].Region != "" {
+						c.Region = nodes[0].Region
+					}
+					if nodes[0].InstanceType != "" && c.Resources != nil {
+						c.Resources.InstanceType = nodes[0].InstanceType
+					}
 					s.store.UpdateCluster(c)
 				}
 				s.logger.Info("cloud provisioning complete", "cluster", clusterName, "nodes", len(nodes))
@@ -972,37 +996,6 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"jobs": jobs})
-}
-
-func (s *Server) handleClusterOrSSHProxy(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/")
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 || parts[0] == "" {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	// SSH proxy uses WebSocket upgrade, not a normal GET
-	if parts[1] == "ssh" {
-		s.handleSSHProxy(w, r)
-		return
-	}
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	clusterName := parts[0]
-
-	switch parts[1] {
-	case "nodes":
-		s.handleNodesAPI(w, r, clusterName)
-	case "metrics":
-		s.handleMetricsAPI(w, r, clusterName)
-	default:
-		http.Error(w, "not found", http.StatusNotFound)
-	}
 }
 
 // Nodes API

@@ -116,12 +116,18 @@ func (s *Server) handleSSHProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read from client WebSocket, forward to agent via tunnel
+	// Read from client WebSocket, forward to agent via tunnel.
+	// Touch autostop on every message -- the session is active as long as
+	// data flows (keystrokes, output, file transfers).
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
 			s.logger.Info("ssh proxy: client read ended", "session_id", sessionID, "error", err)
 			return
+		}
+
+		if ac.ClusterID != "" {
+			s.autostop.Touch(ac.ClusterID)
 		}
 
 		if err := ac.Tunnel.Send(ctx, &pb.Envelope{

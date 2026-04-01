@@ -1,7 +1,5 @@
 package domain
 
-import "fmt"
-
 type CloudProvider string
 
 const (
@@ -40,12 +38,11 @@ func (r Resources) InfraString() string {
 }
 
 func (r Resources) String() string {
-	parts := r.InfraString()
-	if r.InstanceType != "" {
-		parts += fmt.Sprintf(", %s", r.InstanceType)
-	}
 	if r.Accelerators != "" {
-		parts += fmt.Sprintf(", %s", r.Accelerators)
+		return r.Accelerators
 	}
-	return parts
+	if r.InstanceType != "" {
+		return r.InstanceType
+	}
+	return "-"
 }

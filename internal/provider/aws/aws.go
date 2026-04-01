@@ -194,8 +194,10 @@ func (p *Provider) Launch(ctx context.Context, cluster *domain.Cluster, task *do
 		}
 
 		node := provider.NodeInfo{
-			InstanceID: instanceID,
-			Status:     "running",
+			InstanceID:   instanceID,
+			Status:       "running",
+			Region:       region,
+			InstanceType: string(instanceType),
 		}
 
 		if len(descResult.Reservations) > 0 && len(descResult.Reservations[0].Instances) > 0 {

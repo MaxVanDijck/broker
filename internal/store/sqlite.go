@@ -35,7 +35,7 @@ func (s *SQLiteStore) migrate() error {
 			data TEXT NOT NULL,
 			created_at TEXT NOT NULL
 		);
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
+		CREATE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
 		CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
 			cluster_id TEXT NOT NULL,
@@ -58,16 +58,28 @@ func (s *SQLiteStore) CreateCluster(c *domain.Cluster) error {
 }
 
 func (s *SQLiteStore) GetCluster(name string) (*domain.Cluster, error) {
-	var data string
-	err := s.db.QueryRow("SELECT data FROM clusters WHERE name = ?", name).Scan(&data)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	// Return the active cluster with this name (not terminated/terminating).
+	// Multiple clusters can have the same name -- old ones stay as history.
+	rows, err := s.db.Query("SELECT data FROM clusters WHERE name = ? ORDER BY created_at DESC", name)
 	if err != nil {
 		return nil, err
 	}
-	var c domain.Cluster
-	return &c, json.Unmarshal([]byte(data), &c)
+	defer rows.Close()
+
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		var c domain.Cluster
+		if err := json.Unmarshal([]byte(data), &c); err != nil {
+			return nil, err
+		}
+		if c.Status != domain.ClusterStatusTerminated && c.Status != domain.ClusterStatusTerminating {
+			return &c, nil
+		}
+	}
+	return nil, rows.Err()
 }
 
 func (s *SQLiteStore) GetClusterByID(id string) (*domain.Cluster, error) {

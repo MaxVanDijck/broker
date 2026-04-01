@@ -14,6 +14,7 @@ import {
   Terminal,
   Monitor,
   ExternalLink,
+  DollarSign,
 } from "lucide-react";
 
 interface NodeInfo {
@@ -64,6 +65,28 @@ export function ClusterDetailPage() {
     refetchInterval: 30000,
   });
 
+  interface CostCluster {
+    cluster_name: string;
+    cluster_id: string;
+    hourly_rate: number;
+    total_cost: number;
+    is_spot: boolean;
+    instance_type: string;
+    status: string;
+  }
+
+  const { data: costData } = useQuery<{ clusters: CostCluster[]; total: number }>({
+    queryKey: ["costs"],
+    queryFn: () =>
+      fetch("/api/v1/costs").then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      }),
+    refetchInterval: 30000,
+  });
+
+  const clusterCost = costData?.clusters?.find((c) => c.cluster_name === name);
+
   const workdirPath = nodesData?.workdir_id
     ? `/tmp/broker-workdir-${nodesData.workdir_id}`
     : "";
@@ -92,6 +115,36 @@ export function ClusterDetailPage() {
             <InfoCard icon={Cpu} label="Resources" value={cluster.resources || "-"} />
             <InfoCard icon={HardDrive} label="Nodes" value={String(cluster.numNodes)} />
           </div>
+
+          {clusterCost && (
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4">
+              <div className="mb-2 flex items-center gap-2 text-neutral-500">
+                <DollarSign className="h-4 w-4" />
+                <span className="text-xs">Cost</span>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-neutral-500">Hourly Rate</span>
+                  <div className="font-mono text-neutral-200">
+                    ${clusterCost.hourly_rate.toFixed(2)}/hr
+                    {clusterCost.is_spot && (
+                      <span className="ml-2 rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] text-blue-400">
+                        spot
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Total Cost</span>
+                  <div className="font-mono text-neutral-200">${clusterCost.total_cost.toFixed(2)}</div>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Instance Type</span>
+                  <div className="font-mono text-neutral-200">{clusterCost.instance_type}</div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div>

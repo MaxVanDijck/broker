@@ -581,7 +581,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxy)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -623,7 +623,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxy)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -681,7 +681,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxy)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -719,7 +719,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxy)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -742,7 +742,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxy)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -774,7 +774,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxy)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 

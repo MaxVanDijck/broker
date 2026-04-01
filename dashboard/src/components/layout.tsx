@@ -1,10 +1,11 @@
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { cn } from "@/lib/cn";
-import { Server, Activity, Terminal } from "lucide-react";
+import { Server, Activity, DollarSign, Terminal } from "lucide-react";
 
 const nav = [
   { to: "/", label: "Clusters", icon: Server },
   { to: "/jobs", label: "Jobs", icon: Activity },
+  { to: "/costs", label: "Costs", icon: DollarSign },
 ] as const;
 
 export function Layout() {

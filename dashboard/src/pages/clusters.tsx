@@ -4,12 +4,31 @@ import { broker } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { Server, RefreshCw } from "lucide-react";
 
+interface CostCluster {
+  cluster_name: string;
+  hourly_rate: number;
+}
+
 export function ClustersPage() {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["clusters"],
     queryFn: () => broker.status({}),
     refetchInterval: 30000,
   });
+
+  const { data: costData } = useQuery<{ clusters: CostCluster[] }>({
+    queryKey: ["costs"],
+    queryFn: () =>
+      fetch("/api/v1/costs").then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      }),
+    refetchInterval: 30000,
+  });
+
+  const costByName = new Map(
+    (costData?.clusters ?? []).map((c) => [c.cluster_name, c.hourly_rate]),
+  );
 
   const navigate = useNavigate();
   const clusters = data?.clusters ?? [];
@@ -49,6 +68,7 @@ export function ClustersPage() {
                 <th className="px-4 py-3 font-medium text-neutral-400">Region</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Resources</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Nodes</th>
+                <th className="px-4 py-3 font-medium text-neutral-400">Cost</th>
                 <th className="px-4 py-3 font-medium text-neutral-400">Launched</th>
               </tr>
             </thead>
@@ -69,6 +89,9 @@ export function ClustersPage() {
                     <code className="text-xs">{c.resources || "-"}</code>
                   </td>
                   <td className="px-4 py-3 text-neutral-400">{c.numNodes}</td>
+                  <td className="px-4 py-3 font-mono text-neutral-400">
+                    {costByName.has(c.name) ? `$${costByName.get(c.name)!.toFixed(2)}/hr` : "-"}
+                  </td>
                   <td className="px-4 py-3 text-neutral-400 text-xs">
                     {c.launchedAt ? new Date(c.launchedAt).toLocaleString() : "-"}
                   </td>

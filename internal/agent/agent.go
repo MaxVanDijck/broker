@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -309,7 +310,59 @@ func (a *Agent) collectNodeInfo() *pb.NodeInfo {
 		}
 	}
 
+	info.Gpus = detectGPUs(a.logger)
+
 	return info
+}
+
+func detectGPUs(logger *slog.Logger) []*pb.GPUInfo {
+	path, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		return nil
+	}
+
+	out, err := exec.Command(path,
+		"--query-gpu=index,name,memory.total,uuid",
+		"--format=csv,noheader,nounits",
+	).Output()
+	if err != nil {
+		logger.Warn("nvidia-smi failed during gpu detection", "error", err)
+		return nil
+	}
+
+	var gpus []*pb.GPUInfo
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Split(line, ",")
+		if len(fields) < 4 {
+			continue
+		}
+		for i := range fields {
+			fields[i] = strings.TrimSpace(fields[i])
+		}
+
+		idx, err := strconv.ParseInt(fields[0], 10, 32)
+		if err != nil {
+			continue
+		}
+		memMiB, err := strconv.ParseFloat(fields[2], 64)
+		if err != nil {
+			continue
+		}
+
+		gpus = append(gpus, &pb.GPUInfo{
+			Index:       int32(idx),
+			Model:       fields[1],
+			MemoryBytes: int64(memMiB * 1024 * 1024),
+			Uuid:        fields[3],
+		})
+	}
+
+	return gpus
 }
 
 func totalMemoryBytes() int64 {

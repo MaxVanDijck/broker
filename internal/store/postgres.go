@@ -40,7 +40,7 @@ func (s *PostgresStore) migrate() error {
 			data JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
+		CREATE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
 		CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
 			cluster_id TEXT NOT NULL,
