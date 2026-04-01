@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 
@@ -71,27 +70,31 @@ func (a *Agent) handleSSHSessionData(ctx context.Context, msg *pb.SSHSessionData
 		a.sshRelays.add(sessionID, conn)
 		a.logger.Info("ssh relay: session started", "session_id", sessionID)
 
-		// Read from local SSH server, send back through tunnel
+		// Read from local SSH server, send back through tunnel.
+		// Use context.Background so this goroutine doesn't die if the
+		// message loop context is cancelled -- SSH sessions outlive
+		// individual message dispatches.
 		go func() {
+			sendCtx := context.Background()
 			buf := make([]byte, 32*1024)
 			for {
 				n, err := conn.Read(buf)
 				if n > 0 {
 					data := make([]byte, n)
 					copy(data, buf[:n])
-					a.tun.Send(ctx, &pb.Envelope{
+					if sendErr := a.tun.Send(sendCtx, &pb.Envelope{
 						Payload: &pb.Envelope_SshSession{SshSession: &pb.SSHSession{
 							SessionId: sessionID,
 							Data:      data,
 						}},
-					})
+					}); sendErr != nil {
+						a.sshRelays.remove(sessionID)
+						return
+					}
 				}
 				if err != nil {
-					if err != io.EOF {
-						a.logger.Error("ssh relay: read error", "session_id", sessionID, "error", err)
-					}
 					a.sshRelays.remove(sessionID)
-					a.tun.Send(ctx, &pb.Envelope{
+					a.tun.Send(sendCtx, &pb.Envelope{
 						Payload: &pb.Envelope_SshSession{SshSession: &pb.SSHSession{
 							SessionId: sessionID,
 							Closed:    true,

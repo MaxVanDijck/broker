@@ -53,7 +53,19 @@ export function ClusterDetailPage() {
 
   const cluster = statusData?.clusters?.[0];
 
-  const vscodeURL = `vscode://vscode-remote/ssh-remote+${name}.broker`;
+  const { data: nodesData } = useQuery<{ nodes: NodeInfo[]; workdir_id?: string }>({
+    queryKey: ["cluster-nodes-header", name],
+    queryFn: () =>
+      fetch(`/api/v1/clusters/${name}/nodes`).then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      }),
+    refetchInterval: 15000,
+  });
+
+  const workdirPath = nodesData?.workdir_id
+    ? `/tmp/broker-workdir-${nodesData.workdir_id}`
+    : "";
 
   return (
     <div>
@@ -91,14 +103,7 @@ export function ClusterDetailPage() {
                     copyText={`broker ssh ${name}`}
                     notification="Copied to clipboard"
                   />
-                  <a
-                    href={vscodeURL}
-                    className="flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-700"
-                  >
-                    <Monitor className="h-4 w-4" />
-                    Open in VS Code
-                    <ExternalLink className="h-3 w-3 text-neutral-500" />
-                  </a>
+                  <VSCodeButton name={name} workdirPath={workdirPath} />
                 </div>
                 <ActionButton
                   label="Tear Down"
@@ -317,6 +322,28 @@ function CopyButton({
         </span>
       )}
     </span>
+  );
+}
+
+function VSCodeButton({ name, workdirPath }: { name: string; workdirPath: string }) {
+  const vscodeURL = `vscode://vscode-remote/ssh-remote+${name}.broker${workdirPath}`;
+
+  const handleClick = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Install SSH config before opening VS Code -- no manual setup needed
+    await fetch("/api/v1/ssh-setup", { method: "POST" }).catch(() => {});
+    window.location.href = vscodeURL;
+  }, [vscodeURL]);
+
+  return (
+    <button
+      onClick={handleClick}
+      className="flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-700"
+    >
+      <Monitor className="h-4 w-4" />
+      Open in VS Code
+      <ExternalLink className="h-3 w-3 text-neutral-500" />
+    </button>
   );
 }
 

@@ -5,52 +5,60 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
 
+	"broker/internal/workdir"
 	pb "broker/proto/agentpb"
 )
 
 type LogSink func(jobID string, batch *pb.LogBatch)
 
 type Job struct {
-	ID      string
-	Setup   string
-	Run     string
-	Workdir string
-	Env     map[string]string
+	ID        string
+	Setup     string
+	Run       string
+	Workdir   string
+	WorkdirID string
+	Env       map[string]string
 
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
 }
 
 type Executor struct {
-	logger  *slog.Logger
-	logSink LogSink
+	logger    *slog.Logger
+	logSink   LogSink
+	serverURL string // HTTP base URL for downloading workdirs
 
 	mu   sync.Mutex
 	jobs map[string]*Job
 }
 
-func New(logger *slog.Logger, sink LogSink) *Executor {
+func New(logger *slog.Logger, sink LogSink, serverURL string) *Executor {
 	return &Executor{
-		logger:  logger,
-		logSink: sink,
-		jobs:    make(map[string]*Job),
+		logger:    logger,
+		logSink:   sink,
+		serverURL: serverURL,
+		jobs:      make(map[string]*Job),
 	}
 }
 
 func (e *Executor) Submit(ctx context.Context, msg *pb.SubmitJob, updateFn func(*pb.JobUpdate)) {
 	job := &Job{
-		ID:      msg.JobId,
-		Setup:   msg.SetupScript,
-		Run:     msg.RunScript,
-		Workdir: msg.Workdir,
-		Env:     msg.Env,
+		ID:        msg.JobId,
+		Setup:     msg.SetupScript,
+		Run:       msg.RunScript,
+		Workdir:   msg.Workdir,
+		WorkdirID: msg.WorkdirId,
+		Env:       msg.Env,
 	}
 
 	e.mu.Lock()
@@ -98,6 +106,22 @@ func (e *Executor) run(parent context.Context, job *Job, updateFn func(*pb.JobUp
 		delete(e.jobs, job.ID)
 		e.mu.Unlock()
 	}()
+
+	// Download and extract workdir if specified
+	if job.WorkdirID != "" {
+		updateFn(&pb.JobUpdate{JobId: job.ID, State: pb.JobState_JOB_STATE_PULLING})
+		workdirPath, err := e.downloadWorkdir(job.WorkdirID)
+		if err != nil {
+			updateFn(&pb.JobUpdate{
+				JobId: job.ID,
+				State: pb.JobState_JOB_STATE_FAILED,
+				Error: fmt.Sprintf("download workdir: %v", err),
+			})
+			return
+		}
+		job.Workdir = workdirPath
+		e.logger.Info("workdir extracted", "job_id", job.ID, "path", workdirPath)
+	}
 
 	if job.Setup != "" {
 		updateFn(&pb.JobUpdate{JobId: job.ID, State: pb.JobState_JOB_STATE_SETUP})
@@ -184,4 +208,30 @@ func (e *Executor) streamOutput(jobID string, stream string, r io.Reader) {
 			return
 		}
 	}
+}
+
+func (e *Executor) downloadWorkdir(id string) (string, error) {
+	httpBase := e.serverURL
+	httpBase = strings.Replace(httpBase, "wss://", "https://", 1)
+	httpBase = strings.Replace(httpBase, "ws://", "http://", 1)
+
+	url := httpBase + "/api/v1/workdir/" + id
+	e.logger.Info("downloading workdir", "url", url)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("download %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
+	}
+
+	targetDir := filepath.Join(os.TempDir(), "broker-workdir-"+id)
+	if err := workdir.Extract(resp.Body, targetDir); err != nil {
+		return "", fmt.Errorf("extract: %w", err)
+	}
+
+	return targetDir, nil
 }

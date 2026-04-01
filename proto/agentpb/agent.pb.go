@@ -1023,6 +1023,7 @@ type SubmitJob struct {
 	SetupScript   string `protobuf:"bytes,8,opt,name=setup_script,json=setupScript,proto3" json:"setup_script,omitempty"`
 	RunScript     string `protobuf:"bytes,9,opt,name=run_script,json=runScript,proto3" json:"run_script,omitempty"`
 	Workdir       string `protobuf:"bytes,10,opt,name=workdir,proto3" json:"workdir,omitempty"`
+	WorkdirId     string `protobuf:"bytes,11,opt,name=workdir_id,json=workdirId,proto3" json:"workdir_id,omitempty"` // If set, agent downloads tarball from server at /api/v1/workdir/{workdir_id}
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1123,6 +1124,13 @@ func (x *SubmitJob) GetRunScript() string {
 func (x *SubmitJob) GetWorkdir() string {
 	if x != nil {
 		return x.Workdir
+	}
+	return ""
+}
+
+func (x *SubmitJob) GetWorkdirId() string {
+	if x != nil {
+		return x.WorkdirId
 	}
 	return ""
 }
@@ -1375,7 +1383,7 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\vRegisterAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12<\n" +
-	"\x1aheartbeat_interval_seconds\x18\x03 \x01(\x05R\x18heartbeatIntervalSeconds\"\xe0\x02\n" +
+	"\x1aheartbeat_interval_seconds\x18\x03 \x01(\x05R\x18heartbeatIntervalSeconds\"\xff\x02\n" +
 	"\tSubmitJob\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -1388,7 +1396,9 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\n" +
 	"run_script\x18\t \x01(\tR\trunScript\x12\x18\n" +
 	"\aworkdir\x18\n" +
-	" \x01(\tR\aworkdir\x1a6\n" +
+	" \x01(\tR\aworkdir\x12\x1d\n" +
+	"\n" +
+	"workdir_id\x18\v \x01(\tR\tworkdirId\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"8\n" +

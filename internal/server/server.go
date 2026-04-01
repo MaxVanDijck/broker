@@ -76,6 +76,8 @@ func (s *Server) Serve(port int) error {
 
 	// REST API
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
+	mux.HandleFunc("/api/v1/workdir/", s.handleWorkdir)
+	mux.HandleFunc("/api/v1/ssh-setup", s.handleSSHSetup)
 	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxy)
 
 	// Health check
@@ -147,8 +149,11 @@ func (s *Server) watchProvisionedCluster(clusterName string, prov provider.Provi
 
 func (s *Server) onAgentRegister(ac *AgentConnection) {
 	s.logger.Info("agent online", "node_id", ac.NodeID, "cluster", ac.ClusterName)
+	s.trySetClusterUp(ac.ClusterName)
+}
 
-	cluster, err := s.store.GetCluster(ac.ClusterName)
+func (s *Server) trySetClusterUp(clusterName string) {
+	cluster, err := s.store.GetCluster(clusterName)
 	if err != nil || cluster == nil {
 		return
 	}
@@ -160,6 +165,7 @@ func (s *Server) onAgentRegister(ac *AgentConnection) {
 
 func (s *Server) onAgentHeartbeat(nodeID, clusterName string, hb *agentpb.Heartbeat) {
 	s.logger.Debug("heartbeat", "node_id", nodeID, "jobs", hb.RunningJobIds)
+	s.trySetClusterUp(clusterName)
 
 	if s.analytics == nil {
 		return
@@ -267,7 +273,7 @@ func (s *Server) dispatchJob(ctx context.Context, clusterName string, jobID stri
 		submit.Name = task.Name
 		submit.SetupScript = task.Setup
 		submit.RunScript = task.Run
-		submit.Workdir = task.Workdir
+		submit.WorkdirId = task.Workdir
 		submit.Env = task.Envs
 	}
 
@@ -329,6 +335,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 
 	if msg.Task != nil {
 		cluster.NumNodes = int(msg.Task.NumNodes)
+		cluster.WorkdirID = msg.Task.Workdir
 		if msg.Task.Resources != nil {
 			cluster.Cloud = domain.CloudProvider(msg.Task.Resources.Cloud)
 			cluster.Region = msg.Task.Resources.Region
@@ -356,6 +363,12 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check cluster: %w", err))
 	}
+
+	if existing != nil && (existing.Status == domain.ClusterStatusTerminated || existing.Status == domain.ClusterStatusTerminating) {
+		s.store.DeleteCluster(clusterName)
+		existing = nil
+	}
+
 	if existing == nil {
 		if err := s.store.CreateCluster(cluster); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to store cluster: %w", err))
@@ -496,21 +509,28 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 
 	s.logger.Info("tearing down cluster", "name", req.Msg.ClusterName)
 
-	if cluster.Cloud != "" {
-		if prov, ok := s.registry.Get(cluster.Cloud); ok {
-			if err := prov.Teardown(ctx, cluster); err != nil {
-				s.logger.Error("cloud teardown failed", "cluster", cluster.Name, "error", err)
+	cluster.Status = domain.ClusterStatusTerminating
+	s.store.UpdateCluster(cluster)
+
+	// Teardown cloud resources asynchronously so the CLI/dashboard gets
+	// immediate feedback. The cluster transitions TERMINATING -> TERMINATED.
+	go func() {
+		if cluster.Cloud != "" {
+			if prov, ok := s.registry.Get(cluster.Cloud); ok {
+				if err := prov.Teardown(context.Background(), cluster); err != nil {
+					s.logger.Error("cloud teardown failed", "cluster", cluster.Name, "error", err)
+				}
 			}
 		}
-	}
 
-	if err := s.store.DeleteCluster(req.Msg.ClusterName); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
+		cluster.Status = domain.ClusterStatusTerminated
+		s.store.UpdateCluster(cluster)
+		s.logger.Info("cluster terminated", "name", cluster.Name)
+	}()
 
 	return connect.NewResponse(&brokerpb.ClusterResponse{
 		ClusterName: cluster.Name,
-		Status:      "DOWN",
+		Status:      string(domain.ClusterStatusTerminating),
 	}), nil
 }
 
@@ -709,7 +729,8 @@ type gpuResponseJSON struct {
 }
 
 type nodesResponse struct {
-	Nodes []nodeResponseJSON `json:"nodes"`
+	Nodes     []nodeResponseJSON `json:"nodes"`
+	WorkdirID string             `json:"workdir_id,omitempty"`
 }
 
 func (s *Server) handleNodesAPI(w http.ResponseWriter, _ *http.Request, clusterName string) {
@@ -750,8 +771,13 @@ func (s *Server) handleNodesAPI(w http.ResponseWriter, _ *http.Request, clusterN
 		nodes = append(nodes, node)
 	}
 
+	resp := nodesResponse{Nodes: nodes}
+	if cluster != nil && cluster.WorkdirID != "" {
+		resp.WorkdirID = cluster.WorkdirID
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(nodesResponse{Nodes: nodes})
+	json.NewEncoder(w).Encode(resp)
 }
 
 // Metrics API

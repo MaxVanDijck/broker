@@ -61,6 +61,7 @@ func (h *TunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("failed to accept websocket", "error", err)
 		return
 	}
+	conn.SetReadLimit(4 << 20) // 4MB - SSH session data can be large (VS Code server download)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	t := tunnel.New(conn, h.logger)

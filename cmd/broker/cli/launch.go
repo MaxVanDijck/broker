@@ -3,13 +3,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"broker/internal/domain"
+	"broker/internal/workdir"
 	brokerpb "broker/proto/brokerpb"
 )
 
@@ -18,6 +22,7 @@ func launchCmd() *cobra.Command {
 		clusterName string
 		gpus        string
 		cloud       string
+		workdirFlag string
 		detach      bool
 	)
 
@@ -37,11 +42,28 @@ func launchCmd() *cobra.Command {
 			if cloud != "" && task.Resources != nil {
 				task.Resources.Cloud = domain.CloudProvider(cloud)
 			}
+			if workdirFlag != "" {
+				task.Workdir = workdirFlag
+			}
 
 			c := newClient()
+
+			// Upload workdir if specified
+			var workdirID string
+			if task.Workdir != "" {
+				var err error
+				workdirID, err = uploadWorkdir(task.Workdir)
+				if err != nil {
+					return fmt.Errorf("upload workdir: %w", err)
+				}
+			}
+
+			pbTask := taskToProto(task)
+			pbTask.Workdir = workdirID
+
 			resp, err := c.Broker.Launch(context.Background(), connect.NewRequest(&brokerpb.LaunchRequest{
 				ClusterName: clusterName,
-				Task:        taskToProto(task),
+				Task:        pbTask,
 			}))
 			if err != nil {
 				return fmt.Errorf("launch failed: %w", err)
@@ -60,6 +82,7 @@ func launchCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&clusterName, "cluster", "c", "", "Cluster name")
 	cmd.Flags().StringVar(&gpus, "gpus", "", "GPU type and count (e.g. A100:4)")
 	cmd.Flags().StringVar(&cloud, "cloud", "", "Cloud provider")
+	cmd.Flags().StringVarP(&workdirFlag, "workdir", "w", "", "Working directory to upload")
 	cmd.Flags().BoolVarP(&detach, "detach-run", "d", false, "Detach after job submission")
 
 	return cmd
@@ -124,4 +147,49 @@ func taskToProto(t *domain.TaskSpec) *brokerpb.TaskSpec {
 		}
 	}
 	return p
+}
+
+func uploadWorkdir(dir string) (string, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Stat(absDir)
+	if err != nil {
+		return "", fmt.Errorf("workdir %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %s is not a directory", dir)
+	}
+
+	archivePath, err := workdir.Archive(absDir)
+	if err != nil {
+		return "", fmt.Errorf("archive: %w", err)
+	}
+	defer os.Remove(archivePath)
+
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	stat, _ := f.Stat()
+	fmt.Printf("Uploading workdir %s (%d KB)...\n", filepath.Base(absDir), stat.Size()/1024)
+
+	id := uuid.New().String()[:8]
+	url := fmt.Sprintf("%s/api/v1/workdir/%s", serverAddr(), id)
+
+	resp, err := http.Post(url, "application/gzip", f)
+	if err != nil {
+		return "", fmt.Errorf("upload: %w", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("upload failed: %s", resp.Status)
+	}
+
+	return id, nil
 }

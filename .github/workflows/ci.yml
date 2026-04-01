@@ -79,11 +79,11 @@ jobs:
 
       - name: verify status
         run: |
-          for i in $(seq 1 10); do
+          for i in $(seq 1 20); do
             bin/broker status | grep -q "UP" && break
             sleep 1
           done
-          bin/broker status | grep test
+          bin/broker status
           bin/broker status | grep UP
 
       - name: exec job

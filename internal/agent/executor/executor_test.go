@@ -19,7 +19,7 @@ func newTestExecutor(t *testing.T) (*Executor, chan *pb.JobUpdate, chan *pb.LogB
 		logs <- batch
 	}
 
-	e := New(slog.Default(), sink)
+	e := New(slog.Default(), sink, "http://localhost:8080")
 	return e, updates, logs
 }
 

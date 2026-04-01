@@ -62,6 +62,7 @@ func New(cfg Config, logger *slog.Logger) *Agent {
 	a.exec = executor.New(
 		logger.With("component", "executor"),
 		a.sendLogBatch,
+		cfg.ServerURL,
 	)
 
 	if cfg.SelfTerminateAfter > 0 {
@@ -125,7 +126,7 @@ func (a *Agent) connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
-	conn.SetReadLimit(1 << 20) // 1MB
+	conn.SetReadLimit(4 << 20) // 4MB
 
 	a.tun = tunnel.New(conn, a.logger)
 	defer a.tun.Close()

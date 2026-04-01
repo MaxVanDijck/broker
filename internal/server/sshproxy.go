@@ -117,6 +117,7 @@ func (s *Server) handleSSHProxy(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
+			s.logger.Info("ssh proxy: client read ended", "session_id", sessionID, "error", err)
 			return
 		}
 
@@ -126,6 +127,7 @@ func (s *Server) handleSSHProxy(w http.ResponseWriter, r *http.Request) {
 				Data:      data,
 			}},
 		}); err != nil {
+			s.logger.Info("ssh proxy: tunnel send failed", "session_id", sessionID, "error", err)
 			return
 		}
 	}
