@@ -45,12 +45,19 @@ func DefaultConfig() *Config {
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return cfg, nil
+	path := os.Getenv("BROKER_CONFIG_FILE")
+	if path == "" {
+		dataDir := os.Getenv("BROKER_DATA_DIR")
+		if dataDir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return cfg, nil
+			}
+			dataDir = filepath.Join(home, ".broker")
+		}
+		path = filepath.Join(dataDir, "config.yaml")
 	}
 
-	path := filepath.Join(home, ".broker", "config.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return cfg, nil

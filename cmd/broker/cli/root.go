@@ -15,6 +15,12 @@ import (
 	"broker/internal/client"
 )
 
+var buildVersion = "dev"
+
+func SetVersion(v string) {
+	buildVersion = v
+}
+
 const defaultAddr = "http://localhost:8080"
 
 func serverAddr() string {
@@ -69,7 +75,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the broker version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("broker v0.1.0")
+			fmt.Printf("broker v%s\n", buildVersion)
 		},
 	}
 }

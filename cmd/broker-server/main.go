@@ -13,6 +13,8 @@ import (
 	"broker/internal/store"
 )
 
+var version = "dev"
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
@@ -22,13 +24,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		logger.Error("failed to get home dir", "error", err)
-		os.Exit(1)
+	dataDir := os.Getenv("BROKER_DATA_DIR")
+	if dataDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			logger.Error("failed to get home dir", "error", err)
+			os.Exit(1)
+		}
+		dataDir = filepath.Join(home, ".broker")
 	}
-
-	dataDir := filepath.Join(home, ".broker")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		logger.Error("failed to create data dir", "error", err)
 		os.Exit(1)
