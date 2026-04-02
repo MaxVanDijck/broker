@@ -17,6 +17,7 @@ vendor/
 *.db
 *.db-wal
 *.db-shm
+?_journal_mode=WAL*
 
 # OS
 .DS_Store
