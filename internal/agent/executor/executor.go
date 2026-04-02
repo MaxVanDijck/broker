@@ -102,6 +102,14 @@ func (e *Executor) run(parent context.Context, job *Job, updateFn func(*pb.JobUp
 	defer cancel()
 
 	defer func() {
+		if r := recover(); r != nil {
+			e.logger.Error("job execution panicked", "job_id", job.ID, "panic", r)
+			updateFn(&pb.JobUpdate{
+				JobId: job.ID,
+				State: pb.JobState_JOB_STATE_FAILED,
+				Error: fmt.Sprintf("internal panic: %v", r),
+			})
+		}
 		e.mu.Lock()
 		delete(e.jobs, job.ID)
 		e.mu.Unlock()

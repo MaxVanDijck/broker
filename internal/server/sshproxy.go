@@ -85,8 +85,8 @@ func (s *Server) handleSSHProxy(w http.ResponseWriter, r *http.Request) {
 		cancel: cancel,
 	}
 	s.sshSessions.add(sess)
-	if ac.ClusterID != "" {
-		s.autostop.Touch(ac.ClusterID)
+	if cID := ac.GetClusterID(); cID != "" {
+		s.autostop.Touch(cID)
 	}
 
 	s.logger.Info("ssh proxy session started", "session_id", sessionID, "cluster", clusterName, "node", ac.NodeID)
@@ -126,8 +126,8 @@ func (s *Server) handleSSHProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if ac.ClusterID != "" {
-			s.autostop.Touch(ac.ClusterID)
+		if cID := ac.GetClusterID(); cID != "" {
+			s.autostop.Touch(cID)
 		}
 
 		if err := ac.Tunnel.Send(ctx, &pb.Envelope{

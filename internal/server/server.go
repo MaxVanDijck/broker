@@ -84,8 +84,22 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 func (s *Server) Serve(port int) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go s.autostop.Run(ctx)
-	go s.runCostTracker(ctx)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("autostop manager panicked", "panic", r)
+			}
+		}()
+		s.autostop.Run(ctx)
+	}()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("cost tracker panicked", "panic", r)
+			}
+		}()
+		s.runCostTracker(ctx)
+	}()
 
 	mux := http.NewServeMux()
 
@@ -201,7 +215,7 @@ func (s *Server) onAgentRegister(ac *AgentConnection) {
 		s.logger.Warn("agent registered for unknown cluster", "cluster", ac.ClusterName)
 		return
 	}
-	ac.ClusterID = cluster.ID
+	ac.SetClusterID(cluster.ID)
 
 	s.trySetClusterUp(cluster.ID)
 	s.events.Publish(Event{
@@ -234,7 +248,7 @@ func (s *Server) onAgentDisconnect(ac *AgentConnection) {
 		Data: map[string]string{
 			"node_id":      ac.NodeID,
 			"cluster_name": ac.ClusterName,
-			"cluster_id":   ac.ClusterID,
+			"cluster_id":   ac.GetClusterID(),
 		},
 	})
 }
@@ -264,8 +278,8 @@ func (s *Server) onAgentHeartbeat(nodeID, clusterName string, hb *agentpb.Heartb
 	// Resolve cluster name to ID for metrics storage
 	ac, ok := s.Tunnel.GetAgent(nodeID)
 	clusterID := ""
-	if ok && ac.ClusterID != "" {
-		clusterID = ac.ClusterID
+	if ok && ac.GetClusterID() != "" {
+		clusterID = ac.GetClusterID()
 		s.trySetClusterUp(clusterID)
 	}
 
@@ -388,8 +402,8 @@ func (s *Server) dispatchJob(ctx context.Context, clusterID string, jobID string
 		cluster, _ := s.store.GetClusterByID(clusterID)
 		if cluster != nil {
 			ac, ok = s.Tunnel.GetAgentByCluster(cluster.Name)
-			if ok && ac.ClusterID == "" {
-				ac.ClusterID = clusterID
+			if ok && ac.GetClusterID() == "" {
+				ac.SetClusterID(clusterID)
 			}
 		}
 	}
@@ -585,7 +599,8 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 	// If a cloud provider is specified and available, provision instances asynchronously.
 	// The agent will connect back via WebSocket once the instance boots and the
 	// UserData script starts it. Job dispatch happens when the agent registers.
-	if cluster.Cloud != "" && existing == nil {
+	needsProvisioning := existing == nil || (existing != nil && existing.Status == domain.ClusterStatusInit)
+	if cluster.Cloud != "" && needsProvisioning {
 		prov, ok := s.registry.Get(cluster.Cloud)
 		if ok {
 			task := protoToTaskSpec(msg.Task)
@@ -594,6 +609,11 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 			launchClusterID := cluster.ID
 			launchClusterCloud := cluster.Cloud
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						s.logger.Error("provisioning panicked", "cluster", clusterName, "panic", r)
+					}
+				}()
 				s.logger.Info("provisioning cloud instances", "cloud", launchClusterCloud, "cluster", clusterName)
 				// Re-fetch from the store so the goroutine has its own copy.
 				c, _ := s.store.GetClusterByID(launchClusterID)
@@ -782,6 +802,11 @@ func (s *Server) teardownCluster(cluster *domain.Cluster) {
 	clusterName := cluster.Name
 	clusterCloud := cluster.Cloud
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("teardown goroutine panicked", "cluster", clusterName, "panic", r)
+			}
+		}()
 		if clusterCloud != "" {
 			if prov, ok := s.registry.Get(clusterCloud); ok {
 				c, _ := s.store.GetClusterByID(clusterID)

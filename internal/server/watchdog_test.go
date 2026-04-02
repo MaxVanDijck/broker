@@ -149,11 +149,12 @@ func TestProvisionWatchdog_CancelledWhenAgentRegisters(t *testing.T) {
 
 		// Register the agent immediately before starting the watchdog
 		srv.Tunnel.mu.Lock()
-		srv.Tunnel.agents["watchdog-node"] = &AgentConnection{
+		ac := &AgentConnection{
 			NodeID:      "watchdog-node",
 			ClusterName: "watchdog-cluster-2",
-			ClusterID:   "watchdog-c-2",
 		}
+		ac.SetClusterID("watchdog-c-2")
+		srv.Tunnel.agents["watchdog-node"] = ac
 		srv.Tunnel.mu.Unlock()
 
 		go srv.watchProvisionedCluster(cluster.ID, mock, cluster, timeout)

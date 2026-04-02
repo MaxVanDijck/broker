@@ -75,6 +75,12 @@ func (a *Agent) handleSSHSessionData(ctx context.Context, msg *pb.SSHSessionData
 		// message loop context is cancelled -- SSH sessions outlive
 		// individual message dispatches.
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					a.logger.Error("ssh relay goroutine panicked", "session_id", sessionID, "panic", r)
+					a.sshRelays.remove(sessionID)
+				}
+			}()
 			sendCtx := context.Background()
 			buf := make([]byte, 32*1024)
 			for {

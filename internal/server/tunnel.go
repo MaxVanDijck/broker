@@ -15,11 +15,24 @@ import (
 
 type AgentConnection struct {
 	NodeID      string
-	ClusterID   string
+	clusterID   string
+	mu          sync.Mutex
 	ClusterName string
 	Tunnel      *tunnel.Tunnel
 	Info        *pb.NodeInfo
 	Cancel      context.CancelFunc
+}
+
+func (ac *AgentConnection) GetClusterID() string {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	return ac.clusterID
+}
+
+func (ac *AgentConnection) SetClusterID(id string) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	ac.clusterID = id
 }
 
 type TunnelHandler struct {
@@ -190,7 +203,7 @@ func (h *TunnelHandler) GetAgentByClusterID(clusterID string) (*AgentConnection,
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, ac := range h.agents {
-		if ac.ClusterID == clusterID {
+		if ac.GetClusterID() == clusterID {
 			return ac, true
 		}
 	}
