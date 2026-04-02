@@ -195,11 +195,10 @@ func (s *Server) watchProvisionedCluster(clusterID string, prov provider.Provide
 				"timeout", timeout,
 			)
 
-			if err := prov.Teardown(context.Background(), cluster); err != nil {
-				s.logger.Error("failed to teardown orphaned cluster", "cluster", cluster.Name, "error", err)
+			c, _ := s.store.GetClusterByID(clusterID)
+			if c != nil {
+				s.teardownCluster(c)
 			}
-
-			s.store.DeleteCluster(clusterID)
 			return
 		}
 	}

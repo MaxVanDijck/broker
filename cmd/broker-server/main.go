@@ -13,8 +13,6 @@ import (
 	"broker/internal/store"
 )
 
-var version = "dev"
-
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 

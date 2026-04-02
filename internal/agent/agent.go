@@ -90,6 +90,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	}()
 
 	if a.watchdog != nil {
+		a.watchdog.Arm()
 		go a.watchdog.Run(ctx)
 	}
 
@@ -183,7 +184,6 @@ func (a *Agent) register(ctx context.Context) error {
 	a.logger.Info("registered with server", "node_id", a.cfg.NodeID)
 
 	if a.watchdog != nil {
-		a.watchdog.Arm()
 		a.watchdog.Touch()
 	}
 
