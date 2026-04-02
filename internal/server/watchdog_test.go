@@ -96,13 +96,18 @@ func TestProvisionWatchdog_TerminatesWhenNoAgentRegisters(t *testing.T) {
 		// Since timeout is 2s, the deadline fires first, which triggers teardown.
 		time.Sleep(timeout + 1*time.Second)
 
-		// Verify the cluster was deleted from the store
+		// Verify the cluster was terminated (not deleted -- teardownCluster
+		// transitions to TERMINATED for history tracking)
+		time.Sleep(500 * time.Millisecond) // allow async teardown goroutine to complete
 		c, err := db.GetClusterByID("watchdog-c-1")
 		if err != nil {
 			t.Fatalf("get cluster: %v", err)
 		}
-		if c != nil {
-			t.Error("expected cluster to be deleted after watchdog timeout")
+		if c == nil {
+			t.Fatal("expected cluster to exist with TERMINATED status")
+		}
+		if c.Status != domain.ClusterStatusTerminated {
+			t.Errorf("expected TERMINATED, got %s", c.Status)
 		}
 
 		// Verify Teardown was called on the provider
