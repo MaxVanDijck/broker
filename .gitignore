@@ -1,5 +1,8 @@
 # Binaries
 bin/
+/broker
+/broker-server
+/broker-agent
 *.exe
 *.dll
 *.so
