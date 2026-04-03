@@ -2,7 +2,7 @@ GOBIN := $(shell go env GOPATH)/bin
 VERSION ?= 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: all build build-server build-cli build-agent dashboard proto test lint fmt clean docs docs-serve update-pricing update-catalog
+.PHONY: all build build-server build-cli build-agent dashboard proto test test-go test-helm fmt clean docs docs-serve update-pricing update-catalog
 
 all: build
 
@@ -32,15 +32,15 @@ proto:
 		proto/agent.proto
 	cd dashboard && npx buf generate ../proto
 
-test:
+test: test-go test-helm
+
+test-go:
+	go vet ./...
 	go test ./... -race -count=1
 
 test-helm:
-	./scripts/test-helm.sh
-
-lint:
-	go vet ./...
 	helm lint charts/broker/ --strict
+	./scripts/test-helm.sh
 
 fmt:
 	gofmt -s -w .

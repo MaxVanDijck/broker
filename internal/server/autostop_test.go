@@ -10,7 +10,7 @@ import (
 	"broker/internal/store"
 )
 
-func newTestAutostopManager(t *testing.T) (*AutostopManager, *store.SQLiteStore) {
+func newTestAutostopManager(t *testing.T) (*AutostopManager, *store.SQLStore) {
 	t.Helper()
 	db, err := store.NewSQLite(":memory:")
 	if err != nil {

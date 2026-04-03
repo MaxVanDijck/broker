@@ -134,10 +134,10 @@ func TestResolveInstanceType(t *testing.T) {
 	})
 }
 
-func TestResolveRegion(t *testing.T) {
+func TestPreferredRegion(t *testing.T) {
 	t.Run("given cluster region set, when resolving, then cluster region is used", func(t *testing.T) {
 		cluster := &domain.Cluster{Region: "eu-west-1"}
-		got := resolveRegion(cluster, nil)
+		got := preferredRegion(cluster, nil)
 		if got != "eu-west-1" {
 			t.Errorf("expected eu-west-1, got %s", got)
 		}
@@ -146,7 +146,7 @@ func TestResolveRegion(t *testing.T) {
 	t.Run("given no cluster region but task region set, when resolving, then task region is used", func(t *testing.T) {
 		cluster := &domain.Cluster{}
 		task := &domain.TaskSpec{Resources: &domain.Resources{Region: "ap-southeast-1"}}
-		got := resolveRegion(cluster, task)
+		got := preferredRegion(cluster, task)
 		if got != "ap-southeast-1" {
 			t.Errorf("expected ap-southeast-1, got %s", got)
 		}
@@ -155,7 +155,7 @@ func TestResolveRegion(t *testing.T) {
 	t.Run("given no region anywhere, when resolving, then default region is returned", func(t *testing.T) {
 		cluster := &domain.Cluster{}
 		task := &domain.TaskSpec{}
-		got := resolveRegion(cluster, task)
+		got := preferredRegion(cluster, task)
 		if got != defaultRegion {
 			t.Errorf("expected %s, got %s", defaultRegion, got)
 		}

@@ -17,8 +17,8 @@ RUN go mod download
 
 COPY . .
 COPY --from=dashboard /dashboard/dist internal/dashboard/dist
-RUN CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-agent ./cmd/broker-agent
-RUN CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-server ./cmd/broker-server
+RUN CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-agent ./cmd/broker-agent && \
+    CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-server ./cmd/broker-server
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates docker-cli

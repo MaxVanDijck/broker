@@ -15,13 +15,14 @@ type StateStore interface {
 	GetClusterByID(id string) (*domain.Cluster, error)
 	ListClusters() ([]*domain.Cluster, error)
 	UpdateCluster(c *domain.Cluster) error
-	DeleteCluster(id string) error
 
 	CreateJob(j *domain.Job) error
 	GetJob(id string) (*domain.Job, error)
 	ListJobs(clusterID string) ([]*domain.Job, error)
 	ListAllJobs() ([]*domain.Job, error)
 	UpdateJob(j *domain.Job) error
+
+	Close() error
 }
 
 // LogEntry is a single log line from a job.

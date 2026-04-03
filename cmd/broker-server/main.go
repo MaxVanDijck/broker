@@ -41,6 +41,7 @@ func main() {
 		logger.Error("failed to init state store", "error", err)
 		os.Exit(1)
 	}
+	defer stateStore.Close()
 
 	analyticsStore, err := initAnalyticsStore(cfg, dataDir, logger)
 	if err != nil {

@@ -28,7 +28,7 @@ type testEnv struct {
 	server     *Server
 	httpServer *httptest.Server
 	client     brokerpbconnect.BrokerServiceClient
-	store      *store.SQLiteStore
+	store      *store.SQLStore
 }
 
 func setupTestEnv(t *testing.T) *testEnv {
@@ -643,7 +643,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -690,7 +690,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -748,7 +748,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -791,7 +791,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -819,7 +819,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 
@@ -856,7 +856,7 @@ func TestHandleClusterMetrics(t *testing.T) {
 		}
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
 

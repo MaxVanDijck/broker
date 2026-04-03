@@ -249,9 +249,6 @@ func (p *Provider) launchInRegion(ctx context.Context, cluster *domain.Cluster, 
 // (deduped). If no region was specified, fallbackRegions is returned as-is.
 func buildRegionList(cluster *domain.Cluster, task *domain.TaskSpec) []string {
 	preferred := preferredRegion(cluster, task)
-	if preferred == "" {
-		return fallbackRegions
-	}
 
 	regions := []string{preferred}
 	for _, r := range fallbackRegions {
@@ -269,7 +266,7 @@ func preferredRegion(cluster *domain.Cluster, task *domain.TaskSpec) string {
 	if task != nil && task.Resources != nil && task.Resources.Region != "" {
 		return task.Resources.Region
 	}
-	return ""
+	return defaultRegion
 }
 
 // isCapacityError returns true for AWS errors that indicate the region/AZ
@@ -282,14 +279,14 @@ func isCapacityError(err error) bool {
 }
 
 func (p *Provider) Stop(ctx context.Context, cluster *domain.Cluster) error {
-	region := resolveRegion(cluster, nil)
+	region := preferredRegion(cluster, nil)
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 	if err != nil {
 		return fmt.Errorf("load aws config: %w", err)
 	}
 
 	ec2Client := ec2.NewFromConfig(cfg)
-	instanceIDs, err := p.findClusterInstances(ctx, ec2Client, cluster.Name, runningAndStoppedFilter())
+	instanceIDs, err := p.findClusterInstances(ctx, ec2Client, cluster.Name, runningFilter())
 	if err != nil {
 		return fmt.Errorf("find cluster instances: %w", err)
 	}
@@ -311,7 +308,7 @@ func (p *Provider) Stop(ctx context.Context, cluster *domain.Cluster) error {
 }
 
 func (p *Provider) Start(ctx context.Context, cluster *domain.Cluster) error {
-	region := resolveRegion(cluster, nil)
+	region := preferredRegion(cluster, nil)
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 	if err != nil {
 		return fmt.Errorf("load aws config: %w", err)
@@ -340,7 +337,7 @@ func (p *Provider) Start(ctx context.Context, cluster *domain.Cluster) error {
 }
 
 func (p *Provider) Teardown(ctx context.Context, cluster *domain.Cluster) error {
-	region := resolveRegion(cluster, nil)
+	region := preferredRegion(cluster, nil)
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 	if err != nil {
 		return fmt.Errorf("load aws config: %w", err)
@@ -379,7 +376,7 @@ func (p *Provider) Teardown(ctx context.Context, cluster *domain.Cluster) error 
 }
 
 func (p *Provider) Status(ctx context.Context, cluster *domain.Cluster) (domain.ClusterStatus, error) {
-	region := resolveRegion(cluster, nil)
+	region := preferredRegion(cluster, nil)
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 	if err != nil {
 		return "", fmt.Errorf("load aws config: %w", err)
@@ -544,16 +541,6 @@ func (p *Provider) findClusterInstances(ctx context.Context, client *ec2.Client,
 	return ids, nil
 }
 
-func resolveRegion(cluster *domain.Cluster, task *domain.TaskSpec) string {
-	if cluster.Region != "" {
-		return cluster.Region
-	}
-	if task != nil && task.Resources != nil && task.Resources.Region != "" {
-		return task.Resources.Region
-	}
-	return defaultRegion
-}
-
 func resolveInstanceType(task *domain.TaskSpec) string {
 	if task.Resources != nil && task.Resources.InstanceType != "" {
 		return task.Resources.InstanceType
@@ -686,7 +673,7 @@ func nonTerminatedFilter() ec2types.Filter {
 	}
 }
 
-func runningAndStoppedFilter() ec2types.Filter {
+func runningFilter() ec2types.Filter {
 	return ec2types.Filter{
 		Name: aws.String("instance-state-name"),
 		Values: []string{

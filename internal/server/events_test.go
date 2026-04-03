@@ -12,15 +12,15 @@ func TestEventBus_SubscribeAndReceive(t *testing.T) {
 		ch, unsub := bus.Subscribe()
 		defer unsub()
 
-		bus.Publish(Event{Type: "cluster_update", Data: "some-data"})
+		bus.Publish(Event{Type: "cluster_update", Data: map[string]string{"key": "some-data"}})
 
 		select {
 		case got := <-ch:
 			if got.Type != "cluster_update" {
 				t.Errorf("expected type cluster_update, got %s", got.Type)
 			}
-			if got.Data != "some-data" {
-				t.Errorf("expected data some-data, got %v", got.Data)
+			if got.Data["key"] != "some-data" {
+				t.Errorf("expected data key=some-data, got %v", got.Data)
 			}
 		case <-time.After(time.Second):
 			t.Fatal("timed out waiting for event")
@@ -34,7 +34,7 @@ func TestEventBus_UnsubscribeStopsDelivery(t *testing.T) {
 		ch, unsub := bus.Subscribe()
 		unsub()
 
-		bus.Publish(Event{Type: "test", Data: "should-not-arrive"})
+		bus.Publish(Event{Type: "test", Data: map[string]string{"msg": "should-not-arrive"}})
 
 		select {
 		case _, ok := <-ch:
@@ -57,7 +57,7 @@ func TestEventBus_MultipleSubscribers(t *testing.T) {
 		ch3, unsub3 := bus.Subscribe()
 		defer unsub3()
 
-		bus.Publish(Event{Type: "broadcast", Data: "hello"})
+		bus.Publish(Event{Type: "broadcast", Data: map[string]string{"msg": "hello"}})
 
 		for i, ch := range []chan Event{ch1, ch2, ch3} {
 			select {
@@ -75,14 +75,13 @@ func TestEventBus_MultipleSubscribers(t *testing.T) {
 func TestEventBus_SlowSubscriberDoesNotBlockPublisher(t *testing.T) {
 	t.Run("given a slow subscriber with a full buffer, when publishing, then the publisher does not block", func(t *testing.T) {
 		bus := NewEventBus(slog.Default())
-		_, unsub := bus.Subscribe() // subscribe but never read from channel
+		_, unsub := bus.Subscribe()
 		defer unsub()
 
 		done := make(chan struct{})
 		go func() {
-			// Publish more events than the channel buffer (64)
 			for i := 0; i < 200; i++ {
-				bus.Publish(Event{Type: "flood", Data: i})
+				bus.Publish(Event{Type: "flood", Data: map[string]string{"i": "x"}})
 			}
 			close(done)
 		}()
@@ -98,6 +97,6 @@ func TestEventBus_SlowSubscriberDoesNotBlockPublisher(t *testing.T) {
 func TestEventBus_PublishToNoSubscribersIsNoop(t *testing.T) {
 	t.Run("given no subscribers, when publishing, then no panic occurs", func(t *testing.T) {
 		bus := NewEventBus(slog.Default())
-		bus.Publish(Event{Type: "ghost", Data: "nothing"})
+		bus.Publish(Event{Type: "ghost", Data: map[string]string{"msg": "nothing"}})
 	})
 }

@@ -10,8 +10,8 @@ import (
 )
 
 type Event struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
+	Type string            `json:"type"`
+	Data map[string]string `json:"data"`
 }
 
 type EventBus struct {

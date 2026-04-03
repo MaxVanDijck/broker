@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -116,14 +118,7 @@ func resolveTask(args []string) (*domain.TaskSpec, error) {
 		return task, nil
 	}
 
-	run := ""
-	for i, a := range args {
-		if i > 0 {
-			run += " "
-		}
-		run += a
-	}
-	task.Run = run
+	task.Run = strings.Join(args, " ")
 	return task, nil
 }
 
@@ -188,7 +183,16 @@ func uploadWorkdir(dir string) (string, error) {
 	id := uuid.New().String()[:8]
 	url := fmt.Sprintf("%s/api/v1/workdir/%s", serverAddr(), id)
 
-	resp, err := http.Post(url, "application/gzip", f)
+	req, err := http.NewRequest(http.MethodPost, url, f)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/gzip")
+	if token := brokerToken(); token != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("upload: %w", err)
 	}

@@ -44,11 +44,17 @@ func serveCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("state store: %w", err)
 			}
+			defer stateStore.Close()
 
 			analyticsBackend := cfg.Analytics.Backend
 			analyticsDSN := cfg.Analytics.DSN
-			if analyticsDSN == "" && analyticsBackend == "chdb" {
-				analyticsDSN = filepath.Join(dataDir, "chdb")
+			if analyticsDSN == "" {
+				switch analyticsBackend {
+				case "chdb":
+					analyticsDSN = filepath.Join(dataDir, "chdb")
+				case "sqlite":
+					analyticsDSN = filepath.Join(dataDir, "broker.db")
+				}
 			}
 			analyticsStore, err := store.NewAnalyticsStore(analyticsBackend, analyticsDSN)
 			if err != nil {

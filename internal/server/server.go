@@ -123,7 +123,7 @@ func (s *Server) Serve(port int) error {
 
 	// REST API
 	mux.HandleFunc("/api/v1/clusters", s.handleClustersListAPI)
-	mux.HandleFunc("/api/v1/clusters/", s.handleClusterOrSSHProxyOrCosts)
+	mux.HandleFunc("/api/v1/clusters/", s.handleClusterSubroutes)
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
 	mux.HandleFunc("/api/v1/costs", s.handleCostsAPI)
 	mux.HandleFunc("/api/v1/workdir/", s.handleWorkdir)
@@ -566,7 +566,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		if price, ok := aws.OnDemandPricing[selectedInstanceType]; ok {
 			selectedHourlyPrice = price
 			if cluster.Resources.UseSpot {
-				selectedHourlyPrice *= 0.35
+				selectedHourlyPrice *= optimizer.SpotDiscount
 			}
 		}
 	}

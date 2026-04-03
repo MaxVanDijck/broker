@@ -28,8 +28,11 @@ type Recommendation struct {
 }
 
 const (
-	spotDiscount = 0.35
-	maxResults   = 5
+	// SpotDiscount is the estimated cost multiplier for spot instances
+	// relative to on-demand pricing. AWS spot is typically 60-70% cheaper.
+	SpotDiscount = 0.35
+
+	maxResults = 5
 )
 
 func Optimize(reqs Requirements) ([]Recommendation, error) {
@@ -70,7 +73,7 @@ func Optimize(reqs Requirements) ([]Recommendation, error) {
 		}
 
 		if reqs.UseSpot {
-			price *= spotDiscount
+			price *= SpotDiscount
 		}
 
 		candidates = append(candidates, Recommendation{

@@ -73,7 +73,7 @@ func TestSSHProxy_EndToEnd(t *testing.T) {
 
 		mux := http.NewServeMux()
 		mux.Handle("/agent/v1/connect", srv.Tunnel)
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 
 		hs := httptest.NewServer(mux)
 		t.Cleanup(hs.Close)
@@ -276,7 +276,7 @@ func TestSSHProxy_NoAgentReturnsServiceUnavailable(t *testing.T) {
 		srv := New(db, nil, registry, logger)
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterOrSSHProxyOrCosts)
+		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)
 
 		hs := httptest.NewServer(mux)
 		t.Cleanup(hs.Close)

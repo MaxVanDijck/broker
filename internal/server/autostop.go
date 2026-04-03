@@ -10,8 +10,6 @@ import (
 	"broker/internal/store"
 )
 
-const defaultAutostopTimeout = 30 * time.Minute
-
 type autostopEntry struct {
 	lastActivity time.Time
 	timeout      time.Duration

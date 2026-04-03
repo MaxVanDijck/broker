@@ -10,12 +10,11 @@ type TaskSpec struct {
 	Run       string            `yaml:"run,omitempty" json:"run,omitempty"`
 }
 
-func (t *TaskSpec) Validate() error {
+func (t *TaskSpec) ApplyDefaults() {
 	if t.NumNodes <= 0 {
 		t.NumNodes = 1
 	}
 	if t.Resources == nil {
 		t.Resources = &Resources{}
 	}
-	return nil
 }

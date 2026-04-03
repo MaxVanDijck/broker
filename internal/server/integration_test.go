@@ -26,7 +26,7 @@ type integrationEnv struct {
 	server     *Server
 	httpServer *httptest.Server
 	client     brokerpbconnect.BrokerServiceClient
-	store      *store.SQLiteStore
+	store      *store.SQLStore
 }
 
 func setupIntegrationEnv(t *testing.T) *integrationEnv {
