@@ -60,6 +60,7 @@ jobs:
           cd dashboard && bun install && bun run build && cd ..
           rm -rf internal/dashboard/dist
           cp -r dashboard/dist internal/dashboard/dist
+          make embed-agent
           go build -o bin/broker ./cmd/broker
           go build -o bin/broker-server ./cmd/broker-server
           go build -o bin/broker-agent ./cmd/broker-agent

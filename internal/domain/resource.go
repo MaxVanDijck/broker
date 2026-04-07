@@ -18,6 +18,7 @@ type Resources struct {
 	DiskSizeGB   int           `yaml:"disk_size,omitempty" json:"disk_size,omitempty"`
 	Ports        []string      `yaml:"ports,omitempty" json:"ports,omitempty"`
 	ImageID      string        `yaml:"image_id,omitempty" json:"image_id,omitempty"`
+	SubnetID     string        `yaml:"subnet_id,omitempty" json:"subnet_id,omitempty"`
 }
 
 func (r Resources) String() string {

@@ -128,7 +128,12 @@ func (p *Provider) launchInRegion(ctx context.Context, cluster *domain.Cluster, 
 	ec2Client := ec2.NewFromConfig(cfg)
 	ssmClient := ssm.NewFromConfig(cfg)
 
-	sgID, err := p.ensureSecurityGroup(ctx, ec2Client, cluster.Name)
+	vpcID, subnetID, err := p.resolveVPCAndSubnet(ctx, ec2Client, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("resolve vpc/subnet: %w", err)
+	}
+
+	sgID, err := p.ensureSecurityGroup(ctx, ec2Client, cluster.Name, vpcID)
 	if err != nil {
 		return nil, fmt.Errorf("ensure security group: %w", err)
 	}
@@ -162,12 +167,19 @@ func (p *Provider) launchInRegion(ctx context.Context, cluster *domain.Cluster, 
 		userData := generateUserData(p.serverURL, cluster.Name, nodeID, cluster.ID)
 
 		runInput := &ec2.RunInstancesInput{
-			ImageId:          aws.String(amiID),
-			InstanceType:     ec2types.InstanceType(instanceType),
-			MinCount:         aws.Int32(1),
-			MaxCount:         aws.Int32(1),
-			SecurityGroupIds: []string{sgID},
-			UserData:         aws.String(base64.StdEncoding.EncodeToString([]byte(userData))),
+			ImageId:      aws.String(amiID),
+			InstanceType: ec2types.InstanceType(instanceType),
+			MinCount:     aws.Int32(1),
+			MaxCount:     aws.Int32(1),
+			UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(userData))),
+			NetworkInterfaces: []ec2types.InstanceNetworkInterfaceSpecification{
+				{
+					DeviceIndex:              aws.Int32(0),
+					SubnetId:                 aws.String(subnetID),
+					AssociatePublicIpAddress: aws.Bool(true),
+					Groups:                   []string{sgID},
+				},
+			},
 			TagSpecifications: []ec2types.TagSpecification{
 				{
 					ResourceType: ec2types.ResourceTypeInstance,
@@ -373,7 +385,54 @@ func (p *Provider) Teardown(ctx context.Context, cluster *domain.Cluster) error 
 	return nil
 }
 
-func (p *Provider) ensureSecurityGroup(ctx context.Context, client *ec2.Client, clusterName string) (string, error) {
+func (p *Provider) resolveVPCAndSubnet(ctx context.Context, client *ec2.Client, cluster *domain.Cluster) (string, string, error) {
+	// If the cluster specifies a subnet, use it and derive the VPC
+	if cluster.Resources != nil && cluster.Resources.SubnetID != "" {
+		subnet, err := client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+			SubnetIds: []string{cluster.Resources.SubnetID},
+		})
+		if err != nil {
+			return "", "", fmt.Errorf("describe subnet %s: %w", cluster.Resources.SubnetID, err)
+		}
+		if len(subnet.Subnets) == 0 {
+			return "", "", fmt.Errorf("subnet %s not found", cluster.Resources.SubnetID)
+		}
+		vpcID := aws.ToString(subnet.Subnets[0].VpcId)
+		return vpcID, cluster.Resources.SubnetID, nil
+	}
+
+	// Otherwise use the default VPC
+	vpcs, err := client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("isDefault"), Values: []string{"true"}},
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("describe vpcs: %w", err)
+	}
+	if len(vpcs.Vpcs) == 0 {
+		return "", "", fmt.Errorf("no default VPC found in this region; specify a subnet with resources.subnet_id in your task YAML or create a default VPC with: aws ec2 create-default-vpc")
+	}
+	vpcID := aws.ToString(vpcs.Vpcs[0].VpcId)
+
+	// Find a subnet in the default VPC
+	subnets, err := client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("describe subnets: %w", err)
+	}
+	if len(subnets.Subnets) == 0 {
+		return "", "", fmt.Errorf("no subnets found in default VPC %s", vpcID)
+	}
+
+	subnetID := aws.ToString(subnets.Subnets[0].SubnetId)
+	return vpcID, subnetID, nil
+}
+
+func (p *Provider) ensureSecurityGroup(ctx context.Context, client *ec2.Client, clusterName string, vpcID string) (string, error) {
 	sgName := securityGroupName + "-" + clusterName
 
 	descResult, err := client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
@@ -390,6 +449,7 @@ func (p *Provider) ensureSecurityGroup(ctx context.Context, client *ec2.Client, 
 	createResult, err := client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
 		GroupName:   aws.String(sgName),
 		Description: aws.String(securityGroupDesc),
+		VpcId:       aws.String(vpcID),
 		TagSpecifications: []ec2types.TagSpecification{
 			{
 				ResourceType: ec2types.ResourceTypeSecurityGroup,
