@@ -43,7 +43,7 @@ func setupIntegrationEnv(t *testing.T) *integrationEnv {
 	registry := provider.NewRegistry()
 	analytics := store.NewNoopAnalytics()
 
-	srv := New(db, analytics, registry, logger)
+	srv := New(db, analytics, registry, logger, nil)
 
 	mux := http.NewServeMux()
 	path, handler := brokerpbconnect.NewBrokerServiceHandler(srv)

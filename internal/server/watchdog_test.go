@@ -74,7 +74,7 @@ func TestProvisionWatchdog_TerminatesWhenNoAgentRegisters(t *testing.T) {
 		events := NewEventBus(slog.Default())
 		logger := slog.Default()
 
-		srv := New(db, nil, registry, logger)
+		srv := New(db, nil, registry, logger, nil)
 		srv.events = events
 
 		cluster := &domain.Cluster{
@@ -132,7 +132,7 @@ func TestProvisionWatchdog_CancelledWhenAgentRegisters(t *testing.T) {
 		events := NewEventBus(slog.Default())
 		logger := slog.Default()
 
-		srv := New(db, nil, registry, logger)
+		srv := New(db, nil, registry, logger, nil)
 		srv.events = events
 
 		cluster := &domain.Cluster{

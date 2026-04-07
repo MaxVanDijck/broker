@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -37,16 +38,18 @@ type Executor struct {
 	logger    *slog.Logger
 	logSink   LogSink
 	serverURL string // HTTP base URL for downloading workdirs
+	token     string // auth token for server requests
 
 	mu   sync.Mutex
 	jobs map[string]*Job
 }
 
-func New(logger *slog.Logger, sink LogSink, serverURL string) *Executor {
+func New(logger *slog.Logger, sink LogSink, serverURL string, token string) *Executor {
 	return &Executor{
 		logger:    logger,
 		logSink:   sink,
 		serverURL: serverURL,
+		token:     token,
 		jobs:      make(map[string]*Job),
 	}
 }
@@ -226,20 +229,49 @@ func (e *Executor) downloadWorkdir(id string) (string, error) {
 	url := httpBase + "/api/v1/workdir/" + id
 	e.logger.Info("downloading workdir", "url", url)
 
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", fmt.Errorf("download %s: %w", url, err)
-	}
-	defer resp.Body.Close()
+	const maxRetries = 5
+	const retryDelay = 3 * time.Second
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
+	var lastErr error
+	for attempt := range maxRetries {
+		if attempt > 0 {
+			e.logger.Warn("retrying workdir download", "attempt", attempt+1, "url", url)
+			time.Sleep(retryDelay)
+		}
+
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			return "", fmt.Errorf("create request: %w", err)
+		}
+		if e.token != "" {
+			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+e.token)))
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("download %s: %w", url, err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("download %s: status %d", url, resp.StatusCode)
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+				return "", lastErr
+			}
+			continue
+		}
+
+		targetDir := filepath.Join(os.TempDir(), "broker-workdir-"+id)
+		if err := workdir.Extract(resp.Body, targetDir); err != nil {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("extract: %w", err)
+			continue
+		}
+		resp.Body.Close()
+
+		return targetDir, nil
 	}
 
-	targetDir := filepath.Join(os.TempDir(), "broker-workdir-"+id)
-	if err := workdir.Extract(resp.Body, targetDir); err != nil {
-		return "", fmt.Errorf("extract: %w", err)
-	}
-
-	return targetDir, nil
+	return "", fmt.Errorf("workdir download failed after %d attempts: %w", maxRetries, lastErr)
 }

@@ -3,12 +3,18 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	brokerpb "broker/proto/brokerpb"
 )
+
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
 
 func stopCmd() *cobra.Command {
 	return &cobra.Command{
@@ -53,6 +59,9 @@ func downCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
+				if !isTerminal() {
+					return fmt.Errorf("refusing to tear down cluster without --yes flag when stdin is not a terminal")
+				}
 				fmt.Printf("Tearing down cluster %s. This will delete all resources. Continue? [y/N] ", args[0])
 				var confirm string
 				fmt.Scanln(&confirm)

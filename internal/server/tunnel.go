@@ -201,8 +201,13 @@ func (h *TunnelHandler) GetAgentByCluster(clusterName string) (*AgentConnection,
 
 func (h *TunnelHandler) GetAgentByClusterID(clusterID string) (*AgentConnection, bool) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	agents := make([]*AgentConnection, 0, len(h.agents))
 	for _, ac := range h.agents {
+		agents = append(agents, ac)
+	}
+	h.mu.RUnlock()
+
+	for _, ac := range agents {
 		if ac.GetClusterID() == clusterID {
 			return ac, true
 		}

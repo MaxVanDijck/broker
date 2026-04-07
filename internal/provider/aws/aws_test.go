@@ -195,16 +195,16 @@ func TestGenerateUserData(t *testing.T) {
 		if !strings.HasPrefix(script, "#!/bin/bash") {
 			t.Error("expected script to start with shebang")
 		}
-		if !strings.Contains(script, "--server \"wss://broker.example.com\"") {
+		if !strings.Contains(script, "--server 'wss://broker.example.com'") {
 			t.Error("expected script to contain --server flag with websocket URL")
 		}
-		if !strings.Contains(script, "--cluster \"test-cluster\"") {
+		if !strings.Contains(script, "--cluster 'test-cluster'") {
 			t.Error("expected script to contain --cluster flag with cluster name")
 		}
-		if !strings.Contains(script, "--token \"secret-token\"") {
+		if !strings.Contains(script, "--token 'secret-token'") {
 			t.Error("expected script to contain --token flag with token")
 		}
-		if !strings.Contains(script, "--node-id \"test-node-0\"") {
+		if !strings.Contains(script, "--node-id 'test-node-0'") {
 			t.Error("expected script to contain --node-id flag with node ID")
 		}
 		if !strings.Contains(script, "--self-terminate-after") {

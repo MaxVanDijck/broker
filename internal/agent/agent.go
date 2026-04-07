@@ -66,6 +66,7 @@ func New(cfg Config, logger *slog.Logger) *Agent {
 		logger.With("component", "executor"),
 		a.sendLogBatch,
 		cfg.ServerURL,
+		cfg.Token,
 	)
 
 	if cfg.SelfTerminateAfter > 0 {
@@ -96,8 +97,10 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
+		a.ssh.Close()
 		return err
 	case <-ctx.Done():
+		a.ssh.Close()
 		return ctx.Err()
 	}
 }
@@ -106,9 +109,16 @@ func (a *Agent) connectLoop(ctx context.Context) error {
 	backoff := time.Second
 
 	for {
+		start := time.Now()
 		err := a.connect(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+
+		// If the connection lasted longer than the backoff, it was a real
+		// session that disconnected -- reset to fast reconnect.
+		if time.Since(start) > backoff {
+			backoff = time.Second
 		}
 
 		a.logger.Error("tunnel disconnected, reconnecting", "error", err, "backoff", backoff)

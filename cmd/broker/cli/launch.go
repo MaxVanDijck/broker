@@ -25,6 +25,10 @@ func launchCmd() *cobra.Command {
 		clusterName  string
 		gpus         string
 		cloud        string
+		region       string
+		instanceType string
+		spot         bool
+		diskSize     int
 		workdirFlag  string
 		autostopFlag time.Duration
 	)
@@ -44,6 +48,18 @@ func launchCmd() *cobra.Command {
 			}
 			if cloud != "" && task.Resources != nil {
 				task.Resources.Cloud = domain.CloudProvider(cloud)
+			}
+			if region != "" && task.Resources != nil {
+				task.Resources.Region = region
+			}
+			if instanceType != "" && task.Resources != nil {
+				task.Resources.InstanceType = instanceType
+			}
+			if spot && task.Resources != nil {
+				task.Resources.UseSpot = true
+			}
+			if diskSize > 0 && task.Resources != nil {
+				task.Resources.DiskSizeGB = diskSize
 			}
 			if workdirFlag != "" {
 				task.Workdir = workdirFlag
@@ -91,6 +107,10 @@ func launchCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&clusterName, "cluster", "c", "", "Cluster name")
 	cmd.Flags().StringVar(&gpus, "gpus", "", "GPU type and count (e.g. A100:4)")
 	cmd.Flags().StringVar(&cloud, "cloud", "", "Cloud provider")
+	cmd.Flags().StringVar(&region, "region", "", "Cloud region")
+	cmd.Flags().StringVar(&instanceType, "instance-type", "", "Instance type")
+	cmd.Flags().BoolVar(&spot, "spot", false, "Use spot instances")
+	cmd.Flags().IntVar(&diskSize, "disk-size", 0, "Disk size in GB")
 	cmd.Flags().StringVarP(&workdirFlag, "workdir", "w", "", "Working directory to upload")
 	cmd.Flags().DurationVar(&autostopFlag, "autostop", 30*time.Minute, "Idle duration before auto-teardown (0 to disable)")
 

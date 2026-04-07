@@ -63,11 +63,11 @@ func (s *Server) recordCosts(ctx context.Context) {
 			hourlyPrice *= optimizer.SpotDiscount
 		}
 
-		perMinuteCost := hourlyPrice / 60.0
-
 		if c.Resources.InstanceType == "" {
 			c.Resources.InstanceType = instanceType
-			s.store.UpdateCluster(c)
+			if err := s.store.UpdateCluster(c); err != nil {
+				s.logger.Error("failed to update cluster", "cluster_id", c.ID, "error", err)
+			}
 		}
 
 		event := store.CostEvent{
@@ -76,7 +76,7 @@ func (s *Server) recordCosts(ctx context.Context) {
 			Cloud:        string(c.Cloud),
 			Region:       c.Region,
 			InstanceType: instanceType,
-			HourlyCost:   perMinuteCost,
+			HourlyCost:   hourlyPrice,
 			IsSpot:       c.Resources.UseSpot,
 		}
 
@@ -128,7 +128,8 @@ func (s *Server) handleCostsAPI(w http.ResponseWriter, r *http.Request) {
 
 	clusters, err := s.store.ListClusters()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to list clusters", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -184,6 +185,7 @@ func (s *Server) handleCostsAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -208,7 +210,8 @@ func (s *Server) handleClusterCostsAPI(w http.ResponseWriter, r *http.Request, c
 
 	cluster, err := s.resolveCluster(clusterName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to resolve cluster", "cluster", clusterName, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if cluster == nil {
@@ -261,5 +264,6 @@ func (s *Server) handleClusterCostsAPI(w http.ResponseWriter, r *http.Request, c
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(resp)
 }

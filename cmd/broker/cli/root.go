@@ -39,7 +39,13 @@ func newClient() *client.Client {
 	if !sshConfigInstalled() {
 		installSSHConfig()
 	}
-	return client.New(serverAddr(), brokerToken())
+	if token := brokerToken(); token != "" {
+		return client.New(serverAddr(), token)
+	}
+	if bearer := brokerAccessToken(); bearer != "" {
+		return client.NewWithBearer(serverAddr(), bearer)
+	}
+	return client.New(serverAddr(), "")
 }
 
 func Root() *cobra.Command {
@@ -61,9 +67,12 @@ func Root() *cobra.Command {
 		execCmd(),
 		logsCmd(),
 		cancelCmd(),
+		jobsCmd(),
 		sshCmd(),
 		sshConfigCmd(),
 		optimizeCmd(),
+		loginCmd(),
+		logoutCmd(),
 		versionCmd(),
 	)
 
@@ -135,14 +144,22 @@ func ensureServer() {
 	}
 }
 
+func setAuthHeader(req *http.Request) {
+	if token := brokerToken(); token != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
+		return
+	}
+	if bearer := brokerAccessToken(); bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+}
+
 func serverIsUp(addr string) bool {
 	req, err := http.NewRequest(http.MethodGet, addr+"/healthz", nil)
 	if err != nil {
 		return false
 	}
-	if token := brokerToken(); token != "" {
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
-	}
+	setAuthHeader(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
@@ -156,9 +173,7 @@ func serverIsReady(addr string) bool {
 	if err != nil {
 		return false
 	}
-	if token := brokerToken(); token != "" {
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
-	}
+	setAuthHeader(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false

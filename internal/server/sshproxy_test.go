@@ -69,7 +69,7 @@ func TestSSHProxy_EndToEnd(t *testing.T) {
 
 		logger := slog.Default()
 		registry := provider.NewRegistry()
-		srv := New(db, nil, registry, logger)
+		srv := New(db, nil, registry, logger, nil)
 
 		mux := http.NewServeMux()
 		mux.Handle("/agent/v1/connect", srv.Tunnel)
@@ -273,7 +273,7 @@ func TestSSHProxy_NoAgentReturnsServiceUnavailable(t *testing.T) {
 
 		logger := slog.Default()
 		registry := provider.NewRegistry()
-		srv := New(db, nil, registry, logger)
+		srv := New(db, nil, registry, logger, nil)
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/v1/clusters/", srv.handleClusterSubroutes)

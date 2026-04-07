@@ -17,12 +17,16 @@ RUN go mod download
 
 COPY . .
 COPY --from=dashboard /dashboard/dist internal/dashboard/dist
-RUN CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-agent ./cmd/broker-agent && \
-    CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-server ./cmd/broker-server
+
+# Build agent binary for linux/amd64 first, then embed it in the server.
+# The agent is also copied to the final image as a standalone binary.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.version=${VERSION}" -o internal/server/agentbin/broker-agent ./cmd/broker-agent && \
+    CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o /broker-server ./cmd/broker-server && \
+    cp internal/server/agentbin/broker-agent /broker-agent
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates docker-cli
+RUN apk add --no-cache ca-certificates
 COPY --from=builder /broker-agent /usr/local/bin/broker-agent
 COPY --from=builder /broker-server /usr/local/bin/broker-server
 
-ENTRYPOINT ["broker-agent"]
+ENTRYPOINT ["broker-server"]

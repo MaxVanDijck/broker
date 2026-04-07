@@ -38,6 +38,7 @@ func (s *Server) handleClusterInfoAPI(w http.ResponseWriter, _ *http.Request, cl
 		item.IsSpot = cluster.Resources.UseSpot
 	}
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(item)
 }
 
@@ -46,6 +47,7 @@ func (s *Server) handleClusterDeleteAPI(w http.ResponseWriter, _ *http.Request, 
 	s.teardownCluster(cluster)
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(map[string]string{
 		"id":     cluster.ID,
 		"name":   cluster.Name,
@@ -73,7 +75,8 @@ func (s *Server) handleClusterSubroutes(w http.ResponseWriter, r *http.Request) 
 
 	cluster, err := s.resolveCluster(nameOrID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to resolve cluster", "cluster", nameOrID, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if cluster == nil {

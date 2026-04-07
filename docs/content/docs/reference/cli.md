@@ -18,6 +18,10 @@ broker launch [flags] [yaml-or-command...]
 | `--cloud` | | | Cloud provider |
 | `--workdir` | `-w` | | Working directory to upload to the node |
 | `--detach-run` | `-d` | `false` | Detach after job submission |
+| `--region` | | | AWS region |
+| `--instance-type` | | | EC2 instance type |
+| `--spot` | | `false` | Use spot instances |
+| `--disk-size` | | | Disk size in GB |
 | `--autostop` | | `30m` | Idle duration before auto-teardown (0 to disable) |
 
 **Examples:**
@@ -121,7 +125,7 @@ broker logs [flags] CLUSTER [JOB_ID]
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
-| `--follow` | `-f` | `true` | Follow log output |
+| `--follow` | `-f` | `false` | Follow log output |
 
 ---
 
@@ -136,6 +140,47 @@ broker cancel [flags] CLUSTER [JOB_IDS...]
 | Flag | Short | Default | Description |
 |---|---|---|---|
 | `--all` | `-a` | `false` | Cancel all jobs |
+
+---
+
+## broker jobs
+
+List jobs.
+
+```bash
+broker jobs [flags]
+```
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--cluster` | `-c` | | Filter by cluster name |
+
+---
+
+## broker login
+
+Authenticate with an OIDC provider (Okta, Google, Auth0, Azure AD).
+
+```bash
+broker login [flags]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--issuer` | `$BROKER_OIDC_ISSUER` | OIDC issuer URL (e.g. `https://dev-123456.okta.com`) |
+| `--client-id` | `$BROKER_OIDC_CLIENT_ID` | OAuth2 client ID |
+
+Opens a browser for authentication. Tokens are stored in `~/.broker/credentials.json` and automatically refreshed.
+
+---
+
+## broker logout
+
+Clear stored authentication credentials.
+
+```bash
+broker logout
+```
 
 ---
 
@@ -191,3 +236,6 @@ broker version
 | Variable | Description |
 |---|---|
 | `BROKER_API_ADDR` | Server address (default: `http://localhost:8080`) |
+| `BROKER_TOKEN` | Shared secret for Basic auth (service accounts, CI) |
+| `BROKER_OIDC_ISSUER` | Default OIDC issuer URL for `broker login` |
+| `BROKER_OIDC_CLIENT_ID` | Default OIDC client ID for `broker login` |

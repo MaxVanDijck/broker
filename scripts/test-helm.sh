@@ -43,7 +43,7 @@ kubectl get pods -l app.kubernetes.io/name=broker
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=broker --timeout=60s
 
 echo "=== port-forwarding ==="
-kubectl port-forward svc/broker 18080:8080 &
+kubectl port-forward svc/broker 18080:8080 >/dev/null 2>&1 &
 PF_PID=$!
 sleep 3
 
@@ -64,7 +64,7 @@ echo "=== testing clusters API ==="
 curl -sf http://localhost:18080/api/v1/clusters
 echo " OK"
 
-kill $PF_PID 2>/dev/null || true
+{ kill $PF_PID && wait $PF_PID; } 2>/dev/null || true
 
 echo "=== running helm test ==="
 helm test broker --timeout 60s

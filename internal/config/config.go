@@ -9,8 +9,26 @@ import (
 
 type Config struct {
 	APIServer APIServerConfig `yaml:"api_server,omitempty"`
+	Auth      AuthConfig      `yaml:"auth,omitempty"`
 	State     StateConfig     `yaml:"state,omitempty"`
 	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
+}
+
+type AuthConfig struct {
+	OIDC OIDCConfig `yaml:"oidc,omitempty"`
+}
+
+type OIDCConfig struct {
+	Issuer       string   `yaml:"issuer,omitempty"`
+	ClientID     string   `yaml:"client_id,omitempty"`
+	ClientSecret string   `yaml:"client_secret,omitempty"`
+	Audience     string   `yaml:"audience,omitempty"`
+	Scopes       []string `yaml:"scopes,omitempty"`
+	RedirectURL  string   `yaml:"redirect_url,omitempty"`
+}
+
+func (c *OIDCConfig) Enabled() bool {
+	return c.Issuer != "" && c.ClientID != ""
 }
 
 type APIServerConfig struct {

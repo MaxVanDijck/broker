@@ -28,8 +28,6 @@ const (
 	defaultRegion       = "us-east-1"
 	defaultInstanceType = "t3.medium"
 	defaultDiskSizeGB   = 100
-	agentSSHPort        = 2222
-	sshPort             = 22
 
 	// Agent binary is downloaded from the broker server itself.
 	// This is a temporary measure -- replace with custom AMIs.
@@ -452,26 +450,9 @@ func (p *Provider) ensureSecurityGroup(ctx context.Context, client *ec2.Client, 
 	sgID := aws.ToString(createResult.GroupId)
 	p.logger.Info("created security group", "sg_id", sgID, "name", sgName)
 
-	_, err = client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-		GroupId: aws.String(sgID),
-		IpPermissions: []ec2types.IpPermission{
-			{
-				IpProtocol: aws.String("tcp"),
-				FromPort:   aws.Int32(int32(sshPort)),
-				ToPort:     aws.Int32(int32(sshPort)),
-				IpRanges:   []ec2types.IpRange{{CidrIp: aws.String("0.0.0.0/0"), Description: aws.String("SSH")}},
-			},
-			{
-				IpProtocol: aws.String("tcp"),
-				FromPort:   aws.Int32(int32(agentSSHPort)),
-				ToPort:     aws.Int32(int32(agentSSHPort)),
-				IpRanges:   []ec2types.IpRange{{CidrIp: aws.String("0.0.0.0/0"), Description: aws.String("Broker agent SSH")}},
-			},
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("authorize security group ingress: %w", err)
-	}
+	// No inbound rules needed: SSH goes through the broker tunnel and the
+	// agent connects outbound to the server. Default VPC allows all
+	// outbound traffic.
 
 	return sgID, nil
 }
@@ -595,6 +576,10 @@ func resolveDiskSize(task *domain.TaskSpec) int {
 	return defaultDiskSizeGB
 }
 
+func shellEscape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 func generateUserData(serverURL, clusterName, nodeID, token string) string {
 	// Normalize the server URL for both HTTP (binary download) and WebSocket (agent).
 	// Accept any scheme in config and derive the correct one for each use.
@@ -613,9 +598,15 @@ func generateUserData(serverURL, clusterName, nodeID, token string) string {
 		wsBase = "wss://" + wsBase
 	}
 
+	escapedBinaryURL := shellEscape(binaryURL)
+	escapedWsBase := shellEscape(wsBase)
+	escapedCluster := shellEscape(clusterName)
+	escapedToken := shellEscape(token)
+	escapedNodeID := shellEscape(nodeID)
+
 	curlAuth := ""
 	if token != "" {
-		curlAuth = fmt.Sprintf(` -u "broker:%s"`, token)
+		curlAuth = fmt.Sprintf(` -u "broker:%s"`, shellEscape(token))
 	}
 
 	return fmt.Sprintf(`#!/bin/bash
@@ -628,7 +619,7 @@ set -euo pipefail
 
 MAX_RETRIES=10
 for i in $(seq 1 $MAX_RETRIES); do
-  curl -fsSL%s -o /usr/local/bin/broker-agent "%s" && break
+  curl -fsSL%s -o /usr/local/bin/broker-agent %s && break
   echo "download attempt $i failed, retrying in 10s..."
   sleep 10
 done
@@ -643,10 +634,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/broker-agent \
-  --server "%s" \
-  --cluster "%s" \
-  --token "%s" \
-  --node-id "%s" \
+  --server %s \
+  --cluster %s \
+  --token %s \
+  --node-id %s \
   --self-terminate-after %s
 Restart=always
 RestartSec=5
@@ -658,7 +649,7 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now broker-agent.service
-`, curlAuth, binaryURL, wsBase, clusterName, token, nodeID, selfTerminateAfterAgent)
+`, curlAuth, escapedBinaryURL, escapedWsBase, escapedCluster, escapedToken, escapedNodeID, selfTerminateAfterAgent)
 }
 
 func nonTerminatedFilter() ec2types.Filter {

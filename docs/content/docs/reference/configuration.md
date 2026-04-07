@@ -30,6 +30,12 @@ state:
 analytics:
   backend: clickhouse
   dsn: clickhouse://user:pass@ch.example.com:9000/broker
+
+auth:
+  oidc:
+    issuer: https://dev-123456.okta.com
+    client_id: 0oa1234567890abcdef
+    audience: api://broker
 ```
 
 ### Full reference
@@ -40,6 +46,24 @@ analytics:
 |---|---|---|
 | `http_port` | `8080` | Port for all traffic (API, agent tunnel, dashboard, healthcheck) |
 | `public_url` | | URL agents use to connect back to the server (e.g. `wss://broker.example.com`). Required for cloud provisioning. |
+
+#### auth
+
+Controls authentication. Multiple methods can be active simultaneously.
+
+| Field | Default | Description |
+|---|---|---|
+| `auth.oidc.issuer` | | OIDC provider URL (e.g. `https://dev-123456.okta.com`) |
+| `auth.oidc.client_id` | | OAuth2 client ID from your identity provider |
+| `auth.oidc.client_secret` | | OAuth2 client secret (optional, for confidential clients) |
+| `auth.oidc.audience` | | Expected audience claim in JWT tokens (optional) |
+| `auth.oidc.scopes` | `["openid", "profile", "email"]` | OAuth2 scopes to request |
+| `auth.oidc.redirect_url` | | Server callback URL for dashboard login flow |
+
+Authentication precedence:
+1. OIDC Bearer token (if `auth.oidc` is configured)
+2. `BROKER_TOKEN` Basic auth (if `BROKER_TOKEN` env var is set)
+3. No auth (if neither is configured -- local development only)
 
 #### state
 
@@ -72,5 +96,6 @@ The `chdb` backend requires the `libchdb` native library and building with `-tag
   server.log     # Auto-started server log output
   server.pid     # PID of auto-started server process
   ssh_config     # Auto-installed SSH config for *.broker hostnames
+  credentials.json  # OIDC tokens from `broker login` (user-specific, not committed)
   chdb/          # chdb analytics data (if using chdb backend)
 ```

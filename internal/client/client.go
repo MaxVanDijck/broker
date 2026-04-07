@@ -30,13 +30,36 @@ func New(baseURL string, token string) *Client {
 	}
 }
 
+func NewWithBearer(baseURL string, bearerToken string) *Client {
+	httpClient := &http.Client{
+		Transport: &authTransport{
+			base:       http.DefaultTransport,
+			token:      bearerToken,
+			authScheme: "Bearer",
+		},
+	}
+
+	return &Client{
+		Broker: brokerpbconnect.NewBrokerServiceClient(
+			httpClient,
+			baseURL,
+		),
+	}
+}
+
 type authTransport struct {
-	base  http.RoundTripper
-	token string
+	base       http.RoundTripper
+	token      string
+	authScheme string
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r := req.Clone(req.Context())
-	r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+t.token)))
+	switch t.authScheme {
+	case "Bearer":
+		r.Header.Set("Authorization", "Bearer "+t.token)
+	default:
+		r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+t.token)))
+	}
 	return t.base.RoundTrip(r)
 }

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"sync"
 
 	"broker/internal/domain"
 )
@@ -26,6 +27,7 @@ type Provider interface {
 }
 
 type Registry struct {
+	mu        sync.RWMutex
 	providers map[domain.CloudProvider]Provider
 }
 
@@ -34,15 +36,21 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Register(p Provider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.providers[p.Name()] = p
 }
 
 func (r *Registry) Get(cloud domain.CloudProvider) (Provider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	p, ok := r.providers[cloud]
 	return p, ok
 }
 
 func (r *Registry) List() []domain.CloudProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	clouds := make([]domain.CloudProvider, 0, len(r.providers))
 	for c := range r.providers {
 		clouds = append(clouds, c)

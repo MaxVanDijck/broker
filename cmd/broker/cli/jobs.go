@@ -2,14 +2,80 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"text/tabwriter"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	brokerpb "broker/proto/brokerpb"
 )
+
+func jobsCmd() *cobra.Command {
+	var cluster string
+
+	cmd := &cobra.Command{
+		Use:   "jobs",
+		Short: "List jobs",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ensureServer()
+
+			url := serverAddr() + "/api/v1/jobs"
+			if cluster != "" {
+				url += "?cluster=" + cluster
+			}
+
+			req, err := http.NewRequest(http.MethodGet, url, nil)
+			if err != nil {
+				return err
+			}
+			if token := brokerToken(); token != "" {
+				req.Header.Set("Authorization", "Basic "+
+					base64Encode("broker:"+token))
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("failed to list jobs: %w", err)
+			}
+			defer resp.Body.Close()
+
+			var result struct {
+				Jobs []struct {
+					ID          string `json:"id"`
+					ClusterName string `json:"cluster_name"`
+					Name        string `json:"name"`
+					Status      string `json:"status"`
+					SubmittedAt string `json:"submitted_at"`
+				} `json:"jobs"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tCLUSTER\tNAME\tSTATUS\tSUBMITTED")
+			for _, j := range result.Jobs {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					j.ID, j.ClusterName, j.Name, j.Status, j.SubmittedAt)
+			}
+			w.Flush()
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&cluster, "cluster", "c", "", "Filter by cluster name")
+	return cmd
+}
+
+func base64Encode(s string) string {
+	return base64.StdEncoding.EncodeToString([]byte(s))
+}
 
 func execCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -74,7 +140,7 @@ func logsCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVarP(&follow, "follow", "f", true, "Follow log output")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output")
 	return cmd
 }
 

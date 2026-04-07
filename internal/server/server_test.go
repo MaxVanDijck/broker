@@ -43,7 +43,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	logger := slog.Default()
 	registry := provider.NewRegistry()
 
-	srv := New(db, nil, registry, logger)
+	srv := New(db, nil, registry, logger, nil)
 
 	mux := http.NewServeMux()
 	path, handler := brokerpbconnect.NewBrokerServiceHandler(srv)

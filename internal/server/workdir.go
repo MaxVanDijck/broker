@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+var validWorkdirID = regexp.MustCompile("^[a-zA-Z0-9_-]+$")
 
 // Workdir storage. Tarballs are stored on disk at ~/.broker/workdirs/{id}.tar.gz.
 // The CLI uploads them before launching a job. The agent downloads them
@@ -29,16 +32,24 @@ func (s *Server) handleWorkdirUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing workdir id", http.StatusBadRequest)
 		return
 	}
+	if !validWorkdirID.MatchString(id) {
+		http.Error(w, "invalid workdir id", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
 
 	path := s.workdirPath(id)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to create workdir directory", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to create workdir file", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer f.Close()
@@ -46,7 +57,8 @@ func (s *Server) handleWorkdirUpload(w http.ResponseWriter, r *http.Request) {
 	n, err := io.Copy(f, r.Body)
 	if err != nil {
 		os.Remove(path)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to write workdir file", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -64,6 +76,10 @@ func (s *Server) handleWorkdirDownload(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/workdir/")
 	if id == "" {
 		http.Error(w, "missing workdir id", http.StatusBadRequest)
+		return
+	}
+	if !validWorkdirID.MatchString(id) {
+		http.Error(w, "invalid workdir id", http.StatusBadRequest)
 		return
 	}
 

@@ -16,6 +16,7 @@ import (
 type Server struct {
 	logger *slog.Logger
 	port   int
+	srv    *gossh.Server
 }
 
 func New(logger *slog.Logger, port int) *Server {
@@ -30,9 +31,16 @@ func (s *Server) authHandler(_ gossh.Context, _ gossh.PublicKey) bool {
 	return true
 }
 
+func (s *Server) Close() error {
+	if s.srv != nil {
+		return s.srv.Close()
+	}
+	return nil
+}
+
 func (s *Server) Serve() error {
 	srv := &gossh.Server{
-		Addr:             fmt.Sprintf(":%d", s.port),
+		Addr:             fmt.Sprintf("127.0.0.1:%d", s.port),
 		Handler:          s.sessionHandler,
 		PublicKeyHandler: s.authHandler,
 		SubsystemHandlers: map[string]gossh.SubsystemHandler{
@@ -54,6 +62,7 @@ func (s *Server) Serve() error {
 		},
 	}
 
+	s.srv = srv
 	s.logger.Info("ssh server starting", "port", s.port)
 	return srv.ListenAndServe()
 }

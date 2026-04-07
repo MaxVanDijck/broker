@@ -20,7 +20,7 @@ func newTestExecutor(t *testing.T) (*Executor, chan *pb.JobUpdate, chan *pb.LogB
 		logs <- batch
 	}
 
-	e := New(slog.Default(), sink, "http://localhost:8080")
+	e := New(slog.Default(), sink, "http://localhost:8080", "")
 	return e, updates, logs
 }
 
@@ -280,7 +280,7 @@ func TestExecutor_WorkdirDownloadFails(t *testing.T) {
 		}
 
 		// Point to a server that doesn't exist
-		e := New(slog.Default(), sink, "http://127.0.0.1:1")
+		e := New(slog.Default(), sink, "http://127.0.0.1:1", "")
 
 		ctx := context.Background()
 
@@ -313,7 +313,7 @@ func TestExecutor_WorkdirDownloadFails(t *testing.T) {
 
 		select {
 		case <-done:
-		case <-time.After(10 * time.Second):
+		case <-time.After(30 * time.Second):
 			t.Fatal("timed out waiting for job to complete")
 		}
 

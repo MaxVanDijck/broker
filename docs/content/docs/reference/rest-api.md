@@ -11,6 +11,55 @@ The broker server exposes a REST API via the [Connect protocol](https://connectr
 http://localhost:8080
 ```
 
+## Authentication
+
+All endpoints (except health checks and auth endpoints) require authentication when configured.
+
+**Bearer token (OIDC):**
+```bash
+curl -H 'Authorization: Bearer eyJhbG...' http://localhost:8080/broker.v1.BrokerService/Status -X POST -d '{}'
+```
+
+**Basic auth (BROKER_TOKEN):**
+```bash
+curl -u broker:my-secret-token http://localhost:8080/broker.v1.BrokerService/Status -X POST -d '{}'
+```
+
+### Auth endpoints
+
+#### GET /auth/login
+
+Redirects to the OIDC provider's authorization page. Used by the dashboard to initiate login.
+
+#### GET /auth/callback
+
+Handles the OIDC callback. Returns tokens as JSON:
+
+```json
+{
+  "access_token": "...",
+  "id_token": "...",
+  "refresh_token": "...",
+  "token_type": "Bearer",
+  "expiry": "2026-04-07T12:00:00Z",
+  "email": "user@example.com",
+  "name": "Jane Doe"
+}
+```
+
+#### GET /auth/userinfo
+
+Returns the authenticated user's info:
+
+```json
+{
+  "subject": "auth0|123456",
+  "email": "user@example.com",
+  "name": "Jane Doe",
+  "groups": ["engineering", "ml-team"]
+}
+```
+
 ## Endpoints
 
 All endpoints follow the pattern: `POST /broker.v1.BrokerService/<Method>`

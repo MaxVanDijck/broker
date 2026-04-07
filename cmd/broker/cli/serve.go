@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"broker/internal/agent"
+	"broker/internal/auth"
 	"broker/internal/config"
 	"broker/internal/provider"
 	awsprovider "broker/internal/provider/aws"
@@ -66,7 +67,16 @@ func serveCmd() *cobra.Command {
 			if cfg.APIServer.PublicURL != "" {
 				registry.Register(awsprovider.New(logger.With("provider", "aws"), cfg.APIServer.PublicURL))
 			}
-			srv := server.New(stateStore, analyticsStore, registry, logger)
+
+			oidcCfg := &auth.OIDCConfig{
+				Issuer:       cfg.Auth.OIDC.Issuer,
+				ClientID:     cfg.Auth.OIDC.ClientID,
+				ClientSecret: cfg.Auth.OIDC.ClientSecret,
+				Audience:     cfg.Auth.OIDC.Audience,
+				Scopes:       cfg.Auth.OIDC.Scopes,
+				RedirectURL:  cfg.Auth.OIDC.RedirectURL,
+			}
+			srv := server.New(stateStore, analyticsStore, registry, logger, oidcCfg)
 
 			port := cfg.APIServer.HTTPPort
 			if port == 0 {
@@ -76,7 +86,7 @@ func serveCmd() *cobra.Command {
 			errCh := make(chan error, 2)
 
 			go func() {
-				errCh <- srv.Serve(port)
+				errCh <- srv.Serve(ctx, port)
 			}()
 
 			// Start a local agent for the "local" cluster

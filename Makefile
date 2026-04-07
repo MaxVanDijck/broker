@@ -6,16 +6,19 @@ LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
 all: build
 
-build: dashboard proto build-cli build-server build-agent
+build: dashboard proto embed-agent build-cli build-server build-agent
 
 build-cli:
 	go build $(LDFLAGS) -o bin/broker ./cmd/broker
 
-build-server: dashboard
+build-server: dashboard embed-agent
 	go build $(LDFLAGS) -o bin/broker-server ./cmd/broker-server
 
 build-agent:
 	go build $(LDFLAGS) -o bin/broker-agent ./cmd/broker-agent
+
+embed-agent:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o internal/server/agentbin/broker-agent ./cmd/broker-agent
 
 dashboard:
 	cd dashboard && bun run build
@@ -60,4 +63,4 @@ update-catalog:
 	gofmt -s -w internal/provider/aws/catalog.go
 
 clean:
-	rm -rf bin/ docs/public/ dashboard/dist internal/dashboard/dist
+	rm -rf bin/ docs/public/ dashboard/dist internal/dashboard/dist internal/server/agentbin/broker-agent

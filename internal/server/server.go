@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 
+	"broker/internal/auth"
 	"broker/internal/dashboard"
 	"broker/internal/domain"
 	"broker/internal/optimizer"
@@ -25,17 +27,25 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	shutdownTimeout = 30 * time.Second
+	maxNumNodes     = 256
+)
+
+var validClusterName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
+
 type Server struct {
 	brokerpbconnect.UnimplementedBrokerServiceHandler
-	store       store.StateStore
-	analytics   store.AnalyticsStore
-	registry    *provider.Registry
-	logger      *slog.Logger
-	Tunnel      *TunnelHandler
-	logbus      *LogBus
-	sshSessions *sshSessionManager
-	events      *EventBus
-	autostop    *AutostopManager
+	store        store.StateStore
+	analytics    store.AnalyticsStore
+	registry     *provider.Registry
+	logger       *slog.Logger
+	Tunnel       *TunnelHandler
+	logbus       *LogBus
+	sshSessions  *sshSessionManager
+	events       *EventBus
+	autostop     *AutostopManager
+	oidcVerifier *auth.Verifier
 
 	// pendingJobs holds task specs for jobs that couldn't be dispatched
 	// because no agent was connected yet (e.g. cloud instances still booting).
@@ -49,7 +59,7 @@ type pendingJob struct {
 	task  *brokerpb.TaskSpec
 }
 
-func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logger *slog.Logger) *Server {
+func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logger *slog.Logger, oidcCfg *auth.OIDCConfig) *Server {
 	evBus := NewEventBus(logger.With("component", "events"))
 	srv := &Server{
 		store:       s,
@@ -62,6 +72,16 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 		events:      evBus,
 		autostop:    NewAutostopManager(s, logger.With("component", "autostop")),
 		pendingJobs: make(map[string][]pendingJob),
+	}
+
+	if oidcCfg != nil && oidcCfg.Enabled() {
+		verifier, err := auth.NewVerifier(context.Background(), *oidcCfg, logger.With("component", "oidc"))
+		if err != nil {
+			logger.Warn("failed to initialize oidc verifier, continuing without oidc", "error", err)
+		} else {
+			srv.oidcVerifier = verifier
+			logger.Info("oidc authentication enabled", "issuer", oidcCfg.Issuer)
+		}
 	}
 
 	srv.autostop.onTeardown = func(cluster *domain.Cluster) {
@@ -81,16 +101,16 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 	return srv
 }
 
-func (s *Server) Serve(port int) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func (s *Server) Serve(ctx context.Context, port int) error {
+	bgCtx, bgCancel := context.WithCancel(ctx)
+	defer bgCancel()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				s.logger.Error("autostop manager panicked", "panic", r)
 			}
 		}()
-		s.autostop.Run(ctx)
+		s.autostop.Run(bgCtx)
 	}()
 	go func() {
 		defer func() {
@@ -98,7 +118,7 @@ func (s *Server) Serve(port int) error {
 				s.logger.Error("cost tracker panicked", "panic", r)
 			}
 		}()
-		s.runCostTracker(ctx)
+		s.runCostTracker(bgCtx)
 	}()
 
 	mux := http.NewServeMux()
@@ -146,13 +166,32 @@ func (s *Server) Serve(port int) error {
 		w.Write([]byte("ok"))
 	})
 
+	// Auth endpoints
+	mux.HandleFunc("/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("/auth/callback", s.handleAuthCallback)
+	mux.HandleFunc("/auth/userinfo", s.handleAuthUserinfo)
+
 	// Dashboard (embedded SPA, serves as fallback for all other routes)
 	mux.Handle("/", dashboard.Handler())
 
 	hs := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           authMiddleware(s.oidcVerifier, mux),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       120 * time.Second,
 	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer shutdownCancel()
+		s.logger.Info("shutting down server")
+		if err := hs.Shutdown(shutdownCtx); err != nil {
+			s.logger.Error("server shutdown error", "error", err)
+		}
+	}()
 
 	s.logger.Info("broker server starting", "port", port, "protocols", "connect,grpc,grpc-web,websocket")
 	return hs.ListenAndServe()
@@ -195,7 +234,10 @@ func (s *Server) watchProvisionedCluster(clusterID string, prov provider.Provide
 				"timeout", timeout,
 			)
 
-			c, _ := s.store.GetClusterByID(clusterID)
+			c, err := s.store.GetClusterByID(clusterID)
+			if err != nil {
+				s.logger.Error("failed to get cluster", "cluster_id", clusterID, "error", err)
+			}
 			if c != nil {
 				s.teardownCluster(c)
 			}
@@ -259,7 +301,9 @@ func (s *Server) trySetClusterUp(clusterID string) {
 	}
 	if cluster.Status == domain.ClusterStatusInit || cluster.Status == domain.ClusterStatusStopped {
 		cluster.Status = domain.ClusterStatusUp
-		s.store.UpdateCluster(cluster)
+		if err := s.store.UpdateCluster(cluster); err != nil {
+			s.logger.Error("failed to update cluster", "cluster_id", cluster.ID, "error", err)
+		}
 		s.events.Publish(Event{
 			Type: "cluster_update",
 			Data: map[string]string{
@@ -398,7 +442,10 @@ func (s *Server) dispatchJob(ctx context.Context, clusterID string, jobID string
 		// Agent may have registered before the cluster was created in the
 		// store, so its ClusterID hasn't been set yet. Look up by cluster
 		// name as a fallback and backfill the ID.
-		cluster, _ := s.store.GetClusterByID(clusterID)
+		cluster, err := s.store.GetClusterByID(clusterID)
+		if err != nil {
+			s.logger.Error("failed to get cluster", "cluster_id", clusterID, "error", err)
+		}
 		if cluster != nil {
 			ac, ok = s.Tunnel.GetAgentByCluster(cluster.Name)
 			if ok && ac.GetClusterID() == "" {
@@ -467,12 +514,33 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 		clusterName = fmt.Sprintf("broker-%s", uuid.New().String()[:8])
 	}
 
-	s.logger.Info("launching cluster", "name", clusterName)
+	if !validClusterName.MatchString(clusterName) {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("invalid cluster name %q: must be 1-63 alphanumeric characters, dots, hyphens, or underscores", clusterName))
+	}
 
 	autostopMinutes := int(msg.IdleMinutesToAutostop)
+	if autostopMinutes < 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("autostop minutes must be non-negative"))
+	}
 	if autostopMinutes == 0 {
 		autostopMinutes = 30
 	}
+
+	if msg.Task != nil && msg.Task.NumNodes > int32(maxNumNodes) {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("num_nodes %d exceeds maximum %d", msg.Task.NumNodes, maxNumNodes))
+	}
+
+	if msg.Task != nil && msg.Task.Resources != nil && msg.Task.Resources.Cloud != "" {
+		cloud := domain.CloudProvider(msg.Task.Resources.Cloud)
+		if _, ok := s.registry.Get(cloud); !ok {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("unknown cloud provider %q", msg.Task.Resources.Cloud))
+		}
+	}
+
+	s.logger.Info("launching cluster", "name", clusterName)
 
 	cluster := &domain.Cluster{
 		ID:              uuid.New().String(),
@@ -615,7 +683,10 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 				}()
 				s.logger.Info("provisioning cloud instances", "cloud", launchClusterCloud, "cluster", clusterName)
 				// Re-fetch from the store so the goroutine has its own copy.
-				c, _ := s.store.GetClusterByID(launchClusterID)
+				c, err := s.store.GetClusterByID(launchClusterID)
+				if err != nil {
+					s.logger.Error("failed to get cluster", "cluster_id", launchClusterID, "error", err)
+				}
 				if c == nil {
 					s.logger.Error("cluster disappeared before provisioning", "cluster", clusterName)
 					return
@@ -624,7 +695,9 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 				if err != nil {
 					s.logger.Error("cloud provisioning failed", "cluster", clusterName, "error", err)
 					c.Status = domain.ClusterStatusTerminated
-					s.store.UpdateCluster(c)
+					if err := s.store.UpdateCluster(c); err != nil {
+						s.logger.Error("failed to update cluster", "cluster_id", c.ID, "error", err)
+					}
 					s.events.Publish(Event{
 						Type: "cluster_update",
 						Data: map[string]string{
@@ -643,7 +716,9 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 					if nodes[0].InstanceType != "" && c.Resources != nil {
 						c.Resources.InstanceType = nodes[0].InstanceType
 					}
-					s.store.UpdateCluster(c)
+					if err := s.store.UpdateCluster(c); err != nil {
+						s.logger.Error("failed to update cluster", "cluster_id", c.ID, "error", err)
+					}
 				}
 				s.logger.Info("cloud provisioning complete", "cluster", clusterName, "nodes", len(nodes))
 
@@ -787,7 +862,9 @@ func (s *Server) teardownCluster(cluster *domain.Cluster) {
 	}
 
 	cluster.Status = domain.ClusterStatusTerminating
-	s.store.UpdateCluster(cluster)
+	if err := s.store.UpdateCluster(cluster); err != nil {
+		s.logger.Error("failed to update cluster", "cluster_id", cluster.ID, "error", err)
+	}
 	s.events.Publish(Event{
 		Type: "cluster_update",
 		Data: map[string]string{
@@ -808,7 +885,10 @@ func (s *Server) teardownCluster(cluster *domain.Cluster) {
 		}()
 		if clusterCloud != "" {
 			if prov, ok := s.registry.Get(clusterCloud); ok {
-				c, _ := s.store.GetClusterByID(clusterID)
+				c, err := s.store.GetClusterByID(clusterID)
+				if err != nil {
+					s.logger.Error("failed to get cluster", "cluster_id", clusterID, "error", err)
+				}
 				if c != nil {
 					if err := prov.Teardown(context.Background(), c); err != nil {
 						s.logger.Error("cloud teardown failed", "cluster", clusterName, "error", err)
@@ -817,9 +897,15 @@ func (s *Server) teardownCluster(cluster *domain.Cluster) {
 			}
 		}
 
-		if c, _ := s.store.GetClusterByID(clusterID); c != nil {
+		c, err := s.store.GetClusterByID(clusterID)
+		if err != nil {
+			s.logger.Error("failed to get cluster", "cluster_id", clusterID, "error", err)
+		}
+		if c != nil {
 			c.Status = domain.ClusterStatusTerminated
-			s.store.UpdateCluster(c)
+			if err := s.store.UpdateCluster(c); err != nil {
+				s.logger.Error("failed to update cluster", "cluster_id", c.ID, "error", err)
+			}
 		}
 		s.events.Publish(Event{
 			Type: "cluster_update",
@@ -1084,7 +1170,8 @@ func (s *Server) handleClustersListAPI(w http.ResponseWriter, r *http.Request) {
 
 	clusters, err := s.store.ListClusters()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to list clusters", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -1109,6 +1196,7 @@ func (s *Server) handleClustersListAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(map[string]interface{}{"clusters": items})
 }
 
@@ -1125,7 +1213,8 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 	if clusterName != "" {
 		cluster, cerr := s.resolveCluster(clusterName)
 		if cerr != nil {
-			http.Error(w, cerr.Error(), http.StatusInternalServerError)
+			s.logger.Error("failed to resolve cluster", "cluster", clusterName, "error", cerr)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		if cluster != nil {
@@ -1135,7 +1224,8 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 		jobs, err = s.store.ListAllJobs()
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("failed to list jobs", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if jobs == nil {
@@ -1143,6 +1233,7 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(map[string]interface{}{"jobs": jobs})
 }
 
@@ -1173,7 +1264,10 @@ type nodesResponse struct {
 func (s *Server) handleNodesAPI(w http.ResponseWriter, _ *http.Request, clusterName string) {
 	// Look up the cluster to get the provisioned public IP (the agent can't
 	// detect its own public IP from inside a VPC).
-	cluster, _ := s.resolveCluster(clusterName)
+	cluster, err := s.resolveCluster(clusterName)
+	if err != nil {
+		s.logger.Error("failed to resolve cluster", "cluster", clusterName, "error", err)
+	}
 
 	agents := s.Tunnel.ListAgents()
 	nodes := make([]nodeResponseJSON, 0)
@@ -1214,6 +1308,7 @@ func (s *Server) handleNodesAPI(w http.ResponseWriter, _ *http.Request, clusterN
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -1239,6 +1334,7 @@ type metricsResponse struct {
 func (s *Server) handleMetricsAPI(w http.ResponseWriter, r *http.Request, clusterName string) {
 	if s.analytics == nil {
 		w.Header().Set("Content-Type", "application/json")
+		// Error ignored: response already committed
 		json.NewEncoder(w).Encode(metricsResponse{ClusterName: clusterName, Points: []metricsPointJSON{}})
 		return
 	}
@@ -1319,5 +1415,6 @@ func (s *Server) handleMetricsAPI(w http.ResponseWriter, r *http.Request, cluste
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(resp)
 }

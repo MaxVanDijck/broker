@@ -1,11 +1,14 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
+	"broker/internal/auth"
 	"broker/internal/config"
 	"broker/internal/provider"
 	awsprovider "broker/internal/provider/aws"
@@ -51,15 +54,27 @@ func main() {
 	defer analyticsStore.Close()
 
 	registry := initProviders(cfg, logger)
-	srv := server.New(stateStore, analyticsStore, registry, logger)
+
+	oidcCfg := &auth.OIDCConfig{
+		Issuer:       cfg.Auth.OIDC.Issuer,
+		ClientID:     cfg.Auth.OIDC.ClientID,
+		ClientSecret: cfg.Auth.OIDC.ClientSecret,
+		Audience:     cfg.Auth.OIDC.Audience,
+		Scopes:       cfg.Auth.OIDC.Scopes,
+		RedirectURL:  cfg.Auth.OIDC.RedirectURL,
+	}
+	srv := server.New(stateStore, analyticsStore, registry, logger, oidcCfg)
 
 	port := cfg.APIServer.HTTPPort
 	if port == 0 {
 		port = 8080
 	}
 
-	fmt.Fprintf(os.Stderr, "broker server listening on :%d\n", port)
-	if err := srv.Serve(port); err != nil {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	logger.Info("broker server starting", "port", port)
+	if err := srv.Serve(ctx, port); err != nil {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
