@@ -162,7 +162,6 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     needs: build-binaries
-    if: hashFiles('charts/broker/Chart.yaml') != ''
     steps:
       - uses: actions/checkout@v4
 
