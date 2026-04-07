@@ -25,7 +25,7 @@ const (
 	securityGroupName = "broker-agent"
 	securityGroupDesc = "Broker agent security group - SSH and agent ports"
 
-	defaultRegion       = "us-east-1"
+	DefaultRegion       = "us-east-1"
 	defaultInstanceType = "t3.medium"
 	defaultDiskSizeGB   = 100
 
@@ -264,7 +264,7 @@ func preferredRegion(cluster *domain.Cluster, task *domain.TaskSpec) string {
 	if task != nil && task.Resources != nil && task.Resources.Region != "" {
 		return task.Resources.Region
 	}
-	return defaultRegion
+	return DefaultRegion
 }
 
 // isCapacityError returns true for AWS errors that indicate the region/AZ
@@ -371,50 +371,6 @@ func (p *Provider) Teardown(ctx context.Context, cluster *domain.Cluster) error 
 	}
 
 	return nil
-}
-
-func (p *Provider) Status(ctx context.Context, cluster *domain.Cluster) (domain.ClusterStatus, error) {
-	region := preferredRegion(cluster, nil)
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
-	if err != nil {
-		return "", fmt.Errorf("load aws config: %w", err)
-	}
-
-	ec2Client := ec2.NewFromConfig(cfg)
-	result, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		Filters: []ec2types.Filter{
-			{Name: aws.String("tag:" + tagKeyCluster), Values: []string{cluster.Name}},
-			nonTerminatedFilter(),
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("describe instances: %w", err)
-	}
-
-	var running, stopped, total int
-	for _, res := range result.Reservations {
-		for _, inst := range res.Instances {
-			total++
-			switch inst.State.Name {
-			case ec2types.InstanceStateNameRunning:
-				running++
-			case ec2types.InstanceStateNameStopped:
-				stopped++
-			}
-		}
-	}
-
-	if total == 0 {
-		return domain.ClusterStatusInit, nil
-	}
-	if running == total {
-		return domain.ClusterStatusUp, nil
-	}
-	if stopped == total {
-		return domain.ClusterStatusStopped, nil
-	}
-
-	return domain.ClusterStatusUp, nil
 }
 
 func (p *Provider) ensureSecurityGroup(ctx context.Context, client *ec2.Client, clusterName string) (string, error) {

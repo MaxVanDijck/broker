@@ -89,7 +89,7 @@ func TestProvisionWatchdog_TerminatesWhenNoAgentRegisters(t *testing.T) {
 		}
 
 		timeout := 2 * time.Second
-		go srv.watchProvisionedCluster(cluster.ID, mock, cluster, timeout)
+		go srv.watchProvisionedCluster(context.Background(), cluster.ID, mock, cluster, timeout)
 
 		// Wait for timeout + some buffer for the watchdog tick interval
 		// The watchdog ticks every 30s, but the deadline channel fires after timeout.
@@ -162,7 +162,7 @@ func TestProvisionWatchdog_CancelledWhenAgentRegisters(t *testing.T) {
 		srv.Tunnel.agents["watchdog-node"] = ac
 		srv.Tunnel.mu.Unlock()
 
-		go srv.watchProvisionedCluster(cluster.ID, mock, cluster, timeout)
+		go srv.watchProvisionedCluster(context.Background(), cluster.ID, mock, cluster, timeout)
 
 		// Wait for deadline to fire plus buffer
 		time.Sleep(timeout + 2*time.Second)

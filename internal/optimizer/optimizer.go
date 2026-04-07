@@ -28,8 +28,8 @@ type Recommendation struct {
 }
 
 const (
-	// SpotDiscount is the estimated cost multiplier for spot instances
-	// relative to on-demand pricing. AWS spot is typically 60-70% cheaper.
+	// SpotDiscount is the estimated spot price as a fraction of on-demand.
+	// 0.35 means spot costs ~35% of on-demand (i.e. ~65% savings).
 	SpotDiscount = 0.35
 
 	maxResults = 5

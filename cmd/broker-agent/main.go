@@ -28,7 +28,6 @@ func rootCmd() *cobra.Command {
 		clusterName        string
 		nodeID             string
 		sshPort            int
-		mode               string
 		selfTerminateAfter time.Duration
 	)
 
@@ -50,7 +49,6 @@ func rootCmd() *cobra.Command {
 				ClusterName:        clusterName,
 				NodeID:             nodeID,
 				SSHPort:            sshPort,
-				Mode:               mode,
 				SelfTerminateAfter: selfTerminateAfter,
 			}
 
@@ -68,7 +66,6 @@ func rootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&clusterName, "cluster", os.Getenv("BROKER_CLUSTER"), "Cluster name this node belongs to")
 	cmd.Flags().StringVar(&nodeID, "node-id", os.Getenv("BROKER_NODE_ID"), "Node ID (auto-generated if empty)")
 	cmd.Flags().IntVar(&sshPort, "ssh-port", 2222, "Port for built-in SSH server")
-	cmd.Flags().StringVar(&mode, "mode", "run", "Agent mode: 'host' (manages Docker) or 'run' (executes inside container)")
 	cmd.Flags().DurationVar(&selfTerminateAfter, "self-terminate-after", 30*time.Minute, "Terminate this node if server is unreachable for this duration (0 to disable)")
 
 	return cmd

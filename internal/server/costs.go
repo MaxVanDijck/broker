@@ -203,11 +203,6 @@ type costEventJSON struct {
 }
 
 func (s *Server) handleClusterCostsAPI(w http.ResponseWriter, r *http.Request, clusterName string) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	cluster, err := s.resolveCluster(clusterName)
 	if err != nil {
 		s.logger.Error("failed to resolve cluster", "cluster", clusterName, "error", err)

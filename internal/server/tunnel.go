@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -201,26 +200,13 @@ func (h *TunnelHandler) GetAgentByCluster(clusterName string) (*AgentConnection,
 
 func (h *TunnelHandler) GetAgentByClusterID(clusterID string) (*AgentConnection, bool) {
 	h.mu.RLock()
-	agents := make([]*AgentConnection, 0, len(h.agents))
+	defer h.mu.RUnlock()
 	for _, ac := range h.agents {
-		agents = append(agents, ac)
-	}
-	h.mu.RUnlock()
-
-	for _, ac := range agents {
 		if ac.GetClusterID() == clusterID {
 			return ac, true
 		}
 	}
 	return nil, false
-}
-
-func (h *TunnelHandler) SendToAgent(ctx context.Context, nodeID string, env *pb.Envelope) error {
-	ac, ok := h.GetAgent(nodeID)
-	if !ok {
-		return fmt.Errorf("agent %s not connected", nodeID)
-	}
-	return ac.Tunnel.Send(ctx, env)
 }
 
 func (h *TunnelHandler) ListAgents() []*AgentConnection {

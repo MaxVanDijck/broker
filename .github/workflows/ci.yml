@@ -26,6 +26,9 @@ jobs:
           rm -rf internal/dashboard/dist
           cp -r dashboard/dist internal/dashboard/dist
 
+      - name: embed agent binary
+        run: make embed-agent
+
       - name: go build
         run: go build ./...
 

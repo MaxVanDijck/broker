@@ -2,7 +2,7 @@ GOBIN := $(shell go env GOPATH)/bin
 VERSION ?= 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: all build build-server build-cli build-agent dashboard proto test test-go test-helm fmt clean docs docs-serve update-pricing update-catalog
+.PHONY: all build build-server build-cli build-agent embed-agent dashboard proto test test-go test-helm fmt clean docs docs-serve update-pricing update-catalog
 
 all: build
 

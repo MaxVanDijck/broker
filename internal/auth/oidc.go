@@ -9,19 +9,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type OIDCConfig struct {
-	Issuer       string
-	ClientID     string
-	ClientSecret string
-	Audience     string
-	Scopes       []string
-	RedirectURL  string
-}
-
-func (c *OIDCConfig) Enabled() bool {
-	return c.Issuer != "" && c.ClientID != ""
-}
-
 type Claims struct {
 	Subject string   `json:"subject"`
 	Email   string   `json:"email"`
@@ -36,7 +23,16 @@ type Verifier struct {
 	logger       *slog.Logger
 }
 
-func NewVerifier(ctx context.Context, cfg OIDCConfig, logger *slog.Logger) (*Verifier, error) {
+type VerifierConfig struct {
+	Issuer       string
+	ClientID     string
+	ClientSecret string
+	Audience     string
+	Scopes       []string
+	RedirectURL  string
+}
+
+func NewVerifier(ctx context.Context, cfg VerifierConfig, logger *slog.Logger) (*Verifier, error) {
 	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery: %w", err)
@@ -95,8 +91,4 @@ func (v *Verifier) VerifyToken(ctx context.Context, rawToken string) (*Claims, e
 
 func (v *Verifier) OAuth2Config() *oauth2.Config {
 	return v.oauth2Config
-}
-
-func (v *Verifier) Provider() *oidc.Provider {
-	return v.provider
 }

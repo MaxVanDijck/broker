@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -208,9 +207,7 @@ func uploadWorkdir(dir string) (string, error) {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/gzip")
-	if token := brokerToken(); token != "" {
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("broker:"+token)))
-	}
+	setAuthHeader(req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

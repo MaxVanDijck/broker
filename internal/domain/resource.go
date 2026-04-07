@@ -20,20 +20,6 @@ type Resources struct {
 	ImageID      string        `yaml:"image_id,omitempty" json:"image_id,omitempty"`
 }
 
-func (r Resources) InfraString() string {
-	s := string(r.Cloud)
-	if s == "" {
-		return "any"
-	}
-	if r.Region != "" {
-		s += "/" + r.Region
-	}
-	if r.Zone != "" {
-		s += "/" + r.Zone
-	}
-	return s
-}
-
 func (r Resources) String() string {
 	if r.Accelerators != "" {
 		return r.Accelerators

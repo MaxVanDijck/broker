@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,10 +32,7 @@ func jobsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if token := brokerToken(); token != "" {
-				req.Header.Set("Authorization", "Basic "+
-					base64Encode("broker:"+token))
-			}
+			setAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
@@ -71,10 +67,6 @@ func jobsCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&cluster, "cluster", "c", "", "Filter by cluster name")
 	return cmd
-}
-
-func base64Encode(s string) string {
-	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
 func execCmd() *cobra.Command {

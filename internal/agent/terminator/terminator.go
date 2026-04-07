@@ -47,10 +47,6 @@ func (t *Terminator) Terminate(ctx context.Context) error {
 	}
 }
 
-func (t *Terminator) Cloud() Cloud {
-	return t.cloud
-}
-
 func (t *Terminator) detectCloud() Cloud {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

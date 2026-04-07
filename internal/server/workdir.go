@@ -16,9 +16,12 @@ var validWorkdirID = regexp.MustCompile("^[a-zA-Z0-9_-]+$")
 // The CLI uploads them before launching a job. The agent downloads them
 // before executing.
 
-func (s *Server) workdirPath(id string) string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".broker", "workdirs", id+".tar.gz")
+func (s *Server) workdirPath(id string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(home, ".broker", "workdirs", id+".tar.gz"), nil
 }
 
 func (s *Server) handleWorkdirUpload(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +42,12 @@ func (s *Server) handleWorkdirUpload(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
 
-	path := s.workdirPath(id)
+	path, err := s.workdirPath(id)
+	if err != nil {
+		s.logger.Error("failed to resolve workdir path", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		s.logger.Error("failed to create workdir directory", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -61,9 +69,12 @@ func (s *Server) handleWorkdirUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	if err := f.Sync(); err != nil {
+		s.logger.Error("failed to sync workdir file", "error", err)
+	}
 
 	s.logger.Info("workdir uploaded", "id", id, "size_bytes", n)
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"id":"%s","size":%d}`, id, n)
 }
 
@@ -83,7 +94,12 @@ func (s *Server) handleWorkdirDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := s.workdirPath(id)
+	path, err := s.workdirPath(id)
+	if err != nil {
+		s.logger.Error("failed to resolve workdir path", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		http.Error(w, "workdir not found", http.StatusNotFound)
@@ -91,10 +107,17 @@ func (s *Server) handleWorkdirDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	stat, _ := f.Stat()
+	stat, err := f.Stat()
+	if err != nil {
+		s.logger.Error("failed to stat workdir file", "id", id, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		s.logger.Error("failed to send workdir", "id", id, "error", err)
+	}
 }
 
 func (s *Server) handleWorkdir(w http.ResponseWriter, r *http.Request) {

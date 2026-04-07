@@ -23,7 +23,6 @@ type Provider interface {
 	Stop(ctx context.Context, cluster *domain.Cluster) error
 	Start(ctx context.Context, cluster *domain.Cluster) error
 	Teardown(ctx context.Context, cluster *domain.Cluster) error
-	Status(ctx context.Context, cluster *domain.Cluster) (domain.ClusterStatus, error)
 }
 
 type Registry struct {

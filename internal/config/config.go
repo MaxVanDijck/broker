@@ -9,13 +9,9 @@ import (
 
 type Config struct {
 	APIServer APIServerConfig `yaml:"api_server,omitempty"`
-	Auth      AuthConfig      `yaml:"auth,omitempty"`
+	OIDC      OIDCConfig      `yaml:"oidc,omitempty"`
 	State     StateConfig     `yaml:"state,omitempty"`
 	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
-}
-
-type AuthConfig struct {
-	OIDC OIDCConfig `yaml:"oidc,omitempty"`
 }
 
 type OIDCConfig struct {
@@ -27,10 +23,6 @@ type OIDCConfig struct {
 	RedirectURL  string   `yaml:"redirect_url,omitempty"`
 }
 
-func (c *OIDCConfig) Enabled() bool {
-	return c.Issuer != "" && c.ClientID != ""
-}
-
 type APIServerConfig struct {
 	HTTPPort  int    `yaml:"http_port,omitempty"`
 	PublicURL string `yaml:"public_url,omitempty"` // URL agents use to connect back (e.g. wss://broker.example.com)
@@ -38,7 +30,7 @@ type APIServerConfig struct {
 
 type StateConfig struct {
 	Backend string `yaml:"backend,omitempty"` // "sqlite" (default) or "postgres"
-	DSN     string `yaml:"dsn,omitempty"`     // postgres connection string
+	DSN     string `yaml:"dsn,omitempty"`     // postgres connection string; for sqlite, path to db file
 }
 
 type AnalyticsConfig struct {

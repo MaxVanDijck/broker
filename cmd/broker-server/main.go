@@ -55,13 +55,13 @@ func main() {
 
 	registry := initProviders(cfg, logger)
 
-	oidcCfg := &auth.OIDCConfig{
-		Issuer:       cfg.Auth.OIDC.Issuer,
-		ClientID:     cfg.Auth.OIDC.ClientID,
-		ClientSecret: cfg.Auth.OIDC.ClientSecret,
-		Audience:     cfg.Auth.OIDC.Audience,
-		Scopes:       cfg.Auth.OIDC.Scopes,
-		RedirectURL:  cfg.Auth.OIDC.RedirectURL,
+	oidcCfg := &auth.VerifierConfig{
+		Issuer:       cfg.OIDC.Issuer,
+		ClientID:     cfg.OIDC.ClientID,
+		ClientSecret: cfg.OIDC.ClientSecret,
+		Audience:     cfg.OIDC.Audience,
+		Scopes:       cfg.OIDC.Scopes,
+		RedirectURL:  cfg.OIDC.RedirectURL,
 	}
 	srv := server.New(stateStore, analyticsStore, registry, logger, oidcCfg)
 

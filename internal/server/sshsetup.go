@@ -19,16 +19,21 @@ func (s *Server) handleSSHSetup(w http.ResponseWriter, r *http.Request) {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("ssh setup: failed to get home dir", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	brokerDir := filepath.Join(home, ".broker")
-	os.MkdirAll(brokerDir, 0o755)
+	if err := os.MkdirAll(brokerDir, 0o755); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	brokerBin, err := findBrokerBinary()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("ssh setup: broker binary not found", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -36,12 +41,16 @@ func (s *Server) handleSSHSetup(w http.ResponseWriter, r *http.Request) {
 
 	managedPath := filepath.Join(brokerDir, "ssh_config")
 	if err := os.WriteFile(managedPath, []byte(managedConfig), 0o644); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Error("ssh setup: failed to write ssh config", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	sshDir := filepath.Join(home, ".ssh")
-	os.MkdirAll(sshDir, 0o700)
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	sshConfigPath := filepath.Join(sshDir, "config")
 	existing, _ := os.ReadFile(sshConfigPath)
@@ -49,12 +58,13 @@ func (s *Server) handleSSHSetup(w http.ResponseWriter, r *http.Request) {
 	if !strings.Contains(string(existing), managedPath) {
 		updated := fmt.Sprintf("Include %s\n", managedPath) + string(existing)
 		if err := os.WriteFile(sshConfigPath, []byte(updated), 0o644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			s.logger.Error("ssh setup: failed to update ssh config", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"ok":true}`))
 }
 

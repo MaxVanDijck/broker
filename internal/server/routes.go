@@ -16,6 +16,9 @@ func (s *Server) resolveCluster(nameOrID string) (*domain.Cluster, error) {
 		return nil, err
 	}
 	if c != nil {
+		if c.Status == domain.ClusterStatusTerminated {
+			return nil, nil
+		}
 		return c, nil
 	}
 	return s.store.GetCluster(nameOrID)

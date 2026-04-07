@@ -40,12 +40,10 @@ func (s *Server) Close() error {
 
 func (s *Server) Serve() error {
 	srv := &gossh.Server{
-		Addr:             fmt.Sprintf("127.0.0.1:%d", s.port),
-		Handler:          s.sessionHandler,
-		PublicKeyHandler: s.authHandler,
-		SubsystemHandlers: map[string]gossh.SubsystemHandler{
-			"sftp": s.sftpUnsupported,
-		},
+		Addr:              fmt.Sprintf("127.0.0.1:%d", s.port),
+		Handler:           s.sessionHandler,
+		PublicKeyHandler:  s.authHandler,
+		SubsystemHandlers: map[string]gossh.SubsystemHandler{},
 		LocalPortForwardingCallback: func(ctx gossh.Context, destinationHost string, destinationPort uint32) bool {
 			return true
 		},
@@ -172,10 +170,6 @@ func (s *Server) sessionHandler(sess gossh.Session) {
 		}
 	}
 	sess.Exit(0)
-}
-
-func (s *Server) sftpUnsupported(sess gossh.Session) {
-	io.WriteString(sess.Stderr(), "sftp not supported\n")
 }
 
 func setWinsize(f *os.File, w, h int) {

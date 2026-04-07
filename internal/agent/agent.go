@@ -30,7 +30,6 @@ type Config struct {
 	ClusterName        string
 	NodeID             string
 	SSHPort            int
-	Mode               string        // "host" or "run"
 	SelfTerminateAfter time.Duration // dead man's switch timeout (0 = disabled)
 }
 
@@ -83,10 +82,22 @@ func (a *Agent) Run(ctx context.Context) error {
 	errCh := make(chan error, 3)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				a.logger.Error("ssh server panicked", "panic", r)
+				errCh <- fmt.Errorf("ssh server panic: %v", r)
+			}
+		}()
 		errCh <- a.ssh.Serve()
 	}()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				a.logger.Error("tunnel connect loop panicked", "panic", r)
+				errCh <- fmt.Errorf("connect loop panic: %v", r)
+			}
+		}()
 		errCh <- a.connectLoop(ctx)
 	}()
 

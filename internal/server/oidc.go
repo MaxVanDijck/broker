@@ -100,6 +100,8 @@ func (s *Server) handleAuthUserinfo(w http.ResponseWriter, r *http.Request) {
 
 func generateRandomState() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand: " + err.Error())
+	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }

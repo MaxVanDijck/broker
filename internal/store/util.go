@@ -3,7 +3,10 @@ package store
 import "strings"
 
 func escape(s string) string {
-	return strings.ReplaceAll(s, "'", "\\'")
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "'", "\\'")
+	s = strings.ReplaceAll(s, "\x00", "")
+	return s
 }
 
 func boolToInt(b bool) int {

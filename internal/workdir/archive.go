@@ -158,6 +158,16 @@ func Extract(r io.Reader, targetDir string) error {
 			}
 			f.Close()
 		case tar.TypeSymlink:
+			// Validate symlink target stays within the extraction directory.
+			linkTarget := header.Linkname
+			if !filepath.IsAbs(linkTarget) {
+				linkTarget = filepath.Join(filepath.Dir(target), linkTarget)
+			}
+			linkTarget = filepath.Clean(linkTarget)
+			cleanDir := filepath.Clean(targetDir)
+			if !strings.HasPrefix(linkTarget, cleanDir+string(filepath.Separator)) && linkTarget != cleanDir {
+				return fmt.Errorf("symlink %q points outside extraction directory: %q", header.Name, header.Linkname)
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}

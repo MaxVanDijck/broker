@@ -46,6 +46,8 @@ type Server struct {
 	events       *EventBus
 	autostop     *AutostopManager
 	oidcVerifier *auth.Verifier
+	teardownMu   sync.Mutex
+	bgCtx        context.Context
 
 	// pendingJobs holds task specs for jobs that couldn't be dispatched
 	// because no agent was connected yet (e.g. cloud instances still booting).
@@ -59,7 +61,7 @@ type pendingJob struct {
 	task  *brokerpb.TaskSpec
 }
 
-func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logger *slog.Logger, oidcCfg *auth.OIDCConfig) *Server {
+func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logger *slog.Logger, oidcCfg *auth.VerifierConfig) *Server {
 	evBus := NewEventBus(logger.With("component", "events"))
 	srv := &Server{
 		store:       s,
@@ -74,7 +76,7 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 		pendingJobs: make(map[string][]pendingJob),
 	}
 
-	if oidcCfg != nil && oidcCfg.Enabled() {
+	if oidcCfg != nil && oidcCfg.Issuer != "" && oidcCfg.ClientID != "" {
 		verifier, err := auth.NewVerifier(context.Background(), *oidcCfg, logger.With("component", "oidc"))
 		if err != nil {
 			logger.Warn("failed to initialize oidc verifier, continuing without oidc", "error", err)
@@ -104,6 +106,7 @@ func New(s store.StateStore, a store.AnalyticsStore, r *provider.Registry, logge
 func (s *Server) Serve(ctx context.Context, port int) error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	defer bgCancel()
+	s.bgCtx = bgCtx
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -151,18 +154,18 @@ func (s *Server) Serve(ctx context.Context, port int) error {
 
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("ok"))
 	})
 
 	// Readiness check (returns 200 only when at least one agent is connected)
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
 		if len(s.Tunnel.ListAgents()) == 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Write([]byte("no agents"))
 			return
 		}
-		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
 
@@ -211,13 +214,15 @@ func (s *Server) hasAgentForCluster(clusterID, clusterName string) bool {
 // within the given timeout. This prevents orphaned instances when the agent
 // binary download fails, the UserData script errors, or the instance cannot
 // reach the server.
-func (s *Server) watchProvisionedCluster(clusterID string, prov provider.Provider, cluster *domain.Cluster, timeout time.Duration) {
+func (s *Server) watchProvisionedCluster(ctx context.Context, clusterID string, prov provider.Provider, cluster *domain.Cluster, timeout time.Duration) {
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-ticker.C:
 			if s.hasAgentForCluster(clusterID, cluster.Name) {
 				s.logger.Info("agent registered, provision watchdog cancelled", "cluster", cluster.Name, "cluster_id", clusterID)
@@ -238,7 +243,7 @@ func (s *Server) watchProvisionedCluster(clusterID string, prov provider.Provide
 			if err != nil {
 				s.logger.Error("failed to get cluster", "cluster_id", clusterID, "error", err)
 			}
-			if c != nil {
+			if err == nil && c != nil {
 				s.teardownCluster(c)
 			}
 			return
@@ -521,11 +526,9 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 
 	autostopMinutes := int(msg.IdleMinutesToAutostop)
 	if autostopMinutes < 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("autostop minutes must be non-negative"))
+		autostopMinutes = 30 // default
 	}
-	if autostopMinutes == 0 {
-		autostopMinutes = 30
-	}
+	// 0 means disable autostop
 
 	if msg.Task != nil && msg.Task.NumNodes > int32(maxNumNodes) {
 		return nil, connect.NewError(connect.CodeInvalidArgument,
@@ -691,21 +694,10 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 					s.logger.Error("cluster disappeared before provisioning", "cluster", clusterName)
 					return
 				}
-				nodes, err := prov.Launch(context.Background(), c, task)
+				nodes, err := prov.Launch(s.bgCtx, c, task)
 				if err != nil {
 					s.logger.Error("cloud provisioning failed", "cluster", clusterName, "error", err)
-					c.Status = domain.ClusterStatusTerminated
-					if err := s.store.UpdateCluster(c); err != nil {
-						s.logger.Error("failed to update cluster", "cluster_id", c.ID, "error", err)
-					}
-					s.events.Publish(Event{
-						Type: "cluster_update",
-						Data: map[string]string{
-							"cluster_name": clusterName,
-							"cluster_id":   launchClusterID,
-							"status":       string(domain.ClusterStatusTerminated),
-						},
-					})
+					s.teardownCluster(c)
 					return
 				}
 				if len(nodes) > 0 {
@@ -727,7 +719,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 				// the instances. This prevents orphaned instances when the
 				// agent binary download fails or the instance can't reach
 				// the server.
-				go s.watchProvisionedCluster(launchClusterID, prov, c, 30*time.Minute)
+				go s.watchProvisionedCluster(s.bgCtx, launchClusterID, prov, c, 30*time.Minute)
 			}()
 		} else {
 			s.logger.Warn("no provider registered for cloud", "cloud", cluster.Cloud)
@@ -760,7 +752,7 @@ func (s *Server) Launch(ctx context.Context, req *connect.Request[brokerpb.Launc
 
 	region := cluster.Region
 	if region == "" {
-		region = "us-east-1"
+		region = aws.DefaultRegion
 	}
 
 	return connect.NewResponse(&brokerpb.LaunchResponse{
@@ -857,14 +849,24 @@ func (s *Server) Down(ctx context.Context, req *connect.Request[brokerpb.Cluster
 func (s *Server) teardownCluster(cluster *domain.Cluster) {
 	s.autostop.Remove(cluster.ID)
 
-	if cluster.Status == domain.ClusterStatusTerminating || cluster.Status == domain.ClusterStatusTerminated {
+	s.teardownMu.Lock()
+	fresh, err := s.store.GetClusterByID(cluster.ID)
+	if err != nil || fresh == nil {
+		s.teardownMu.Unlock()
+		s.logger.Error("failed to fetch cluster for teardown", "cluster_id", cluster.ID, "error", err)
 		return
 	}
-
-	cluster.Status = domain.ClusterStatusTerminating
-	if err := s.store.UpdateCluster(cluster); err != nil {
-		s.logger.Error("failed to update cluster", "cluster_id", cluster.ID, "error", err)
+	if fresh.Status == domain.ClusterStatusTerminating || fresh.Status == domain.ClusterStatusTerminated {
+		s.teardownMu.Unlock()
+		return
 	}
+	fresh.Status = domain.ClusterStatusTerminating
+	if err := s.store.UpdateCluster(fresh); err != nil {
+		s.logger.Error("failed to update cluster", "cluster_id", fresh.ID, "error", err)
+	}
+	s.teardownMu.Unlock()
+
+	cluster = fresh
 	s.events.Publish(Event{
 		Type: "cluster_update",
 		Data: map[string]string{

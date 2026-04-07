@@ -156,8 +156,8 @@ func TestPreferredRegion(t *testing.T) {
 		cluster := &domain.Cluster{}
 		task := &domain.TaskSpec{}
 		got := preferredRegion(cluster, task)
-		if got != defaultRegion {
-			t.Errorf("expected %s, got %s", defaultRegion, got)
+		if got != DefaultRegion {
+			t.Errorf("expected %s, got %s", DefaultRegion, got)
 		}
 	})
 }

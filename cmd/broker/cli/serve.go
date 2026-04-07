@@ -68,13 +68,13 @@ func serveCmd() *cobra.Command {
 				registry.Register(awsprovider.New(logger.With("provider", "aws"), cfg.APIServer.PublicURL))
 			}
 
-			oidcCfg := &auth.OIDCConfig{
-				Issuer:       cfg.Auth.OIDC.Issuer,
-				ClientID:     cfg.Auth.OIDC.ClientID,
-				ClientSecret: cfg.Auth.OIDC.ClientSecret,
-				Audience:     cfg.Auth.OIDC.Audience,
-				Scopes:       cfg.Auth.OIDC.Scopes,
-				RedirectURL:  cfg.Auth.OIDC.RedirectURL,
+			oidcCfg := &auth.VerifierConfig{
+				Issuer:       cfg.OIDC.Issuer,
+				ClientID:     cfg.OIDC.ClientID,
+				ClientSecret: cfg.OIDC.ClientSecret,
+				Audience:     cfg.OIDC.Audience,
+				Scopes:       cfg.OIDC.Scopes,
+				RedirectURL:  cfg.OIDC.RedirectURL,
 			}
 			srv := server.New(stateStore, analyticsStore, registry, logger, oidcCfg)
 
@@ -86,11 +86,23 @@ func serveCmd() *cobra.Command {
 			errCh := make(chan error, 2)
 
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Error("server panicked", "panic", r)
+						errCh <- fmt.Errorf("server panic: %v", r)
+					}
+				}()
 				errCh <- srv.Serve(ctx, port)
 			}()
 
 			// Start a local agent for the "local" cluster
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Error("local agent panicked", "panic", r)
+						errCh <- fmt.Errorf("agent panic: %v", r)
+					}
+				}()
 				time.Sleep(200 * time.Millisecond)
 
 				a := agent.New(agent.Config{
@@ -98,7 +110,6 @@ func serveCmd() *cobra.Command {
 					ClusterName:        "local",
 					NodeID:             "local-0",
 					SSHPort:            2222,
-					Mode:               "run",
 					SelfTerminateAfter: 0,
 				}, logger.With("component", "agent"))
 

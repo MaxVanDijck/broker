@@ -2,29 +2,6 @@ package domain
 
 import "testing"
 
-func TestResources_InfraString(t *testing.T) {
-	t.Run("given no cloud, when calling InfraString, then 'any' is returned", func(t *testing.T) {
-		r := Resources{}
-		if got := r.InfraString(); got != "any" {
-			t.Errorf("expected 'any', got %q", got)
-		}
-	})
-
-	t.Run("given cloud and region, when calling InfraString, then both are included", func(t *testing.T) {
-		r := Resources{Cloud: CloudAWS, Region: "us-east-1"}
-		if got := r.InfraString(); got != "aws/us-east-1" {
-			t.Errorf("expected 'aws/us-east-1', got %q", got)
-		}
-	})
-
-	t.Run("given cloud region and zone, when calling InfraString, then all are included", func(t *testing.T) {
-		r := Resources{Cloud: CloudAWS, Region: "us-east-1", Zone: "us-east-1a"}
-		if got := r.InfraString(); got != "aws/us-east-1/us-east-1a" {
-			t.Errorf("expected 'aws/us-east-1/us-east-1a', got %q", got)
-		}
-	})
-}
-
 func TestResources_String(t *testing.T) {
 	t.Run("given no fields set, when calling String, then '-' is returned", func(t *testing.T) {
 		r := Resources{}

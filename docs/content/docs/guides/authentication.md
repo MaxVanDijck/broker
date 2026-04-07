@@ -49,10 +49,9 @@ Both can be active simultaneously. OIDC is recommended for teams; the shared tok
 Add the OIDC configuration to `~/.broker/config.yaml`:
 
 ```yaml
-auth:
-  oidc:
-    issuer: https://dev-123456.okta.com
-    client_id: 0oa1234567890abcdef
+oidc:
+  issuer: https://dev-123456.okta.com
+  client_id: 0oa1234567890abcdef
 ```
 
 Restart the server for changes to take effect.

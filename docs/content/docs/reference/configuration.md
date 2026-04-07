@@ -31,11 +31,10 @@ analytics:
   backend: clickhouse
   dsn: clickhouse://user:pass@ch.example.com:9000/broker
 
-auth:
-  oidc:
-    issuer: https://dev-123456.okta.com
-    client_id: 0oa1234567890abcdef
-    audience: api://broker
+oidc:
+  issuer: https://dev-123456.okta.com
+  client_id: 0oa1234567890abcdef
+  audience: api://broker
 ```
 
 ### Full reference
@@ -47,21 +46,21 @@ auth:
 | `http_port` | `8080` | Port for all traffic (API, agent tunnel, dashboard, healthcheck) |
 | `public_url` | | URL agents use to connect back to the server (e.g. `wss://broker.example.com`). Required for cloud provisioning. |
 
-#### auth
+#### oidc
 
-Controls authentication. Multiple methods can be active simultaneously.
+Controls OIDC authentication. Multiple auth methods can be active simultaneously.
 
 | Field | Default | Description |
 |---|---|---|
-| `auth.oidc.issuer` | | OIDC provider URL (e.g. `https://dev-123456.okta.com`) |
-| `auth.oidc.client_id` | | OAuth2 client ID from your identity provider |
-| `auth.oidc.client_secret` | | OAuth2 client secret (optional, for confidential clients) |
-| `auth.oidc.audience` | | Expected audience claim in JWT tokens (optional) |
-| `auth.oidc.scopes` | `["openid", "profile", "email"]` | OAuth2 scopes to request |
-| `auth.oidc.redirect_url` | | Server callback URL for dashboard login flow |
+| `oidc.issuer` | | OIDC provider URL (e.g. `https://dev-123456.okta.com`) |
+| `oidc.client_id` | | OAuth2 client ID from your identity provider |
+| `oidc.client_secret` | | OAuth2 client secret (optional, for confidential clients) |
+| `oidc.audience` | | Expected audience claim in JWT tokens (optional) |
+| `oidc.scopes` | `["openid", "profile", "email"]` | OAuth2 scopes to request |
+| `oidc.redirect_url` | | Server callback URL for dashboard login flow |
 
 Authentication precedence:
-1. OIDC Bearer token (if `auth.oidc` is configured)
+1. OIDC Bearer token (if `oidc` is configured)
 2. `BROKER_TOKEN` Basic auth (if `BROKER_TOKEN` env var is set)
 3. No auth (if neither is configured -- local development only)
 
