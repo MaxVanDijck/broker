@@ -148,6 +148,7 @@ func (s *Server) Serve(ctx context.Context, port int) error {
 	mux.HandleFunc("/api/v1/clusters", s.handleClustersListAPI)
 	mux.HandleFunc("/api/v1/clusters/", s.handleClusterSubroutes)
 	mux.HandleFunc("/api/v1/jobs", s.handleJobsAPI)
+	mux.HandleFunc("/api/v1/providers", s.handleProvidersAPI)
 	mux.HandleFunc("/api/v1/costs", s.handleCostsAPI)
 	mux.HandleFunc("/api/v1/workdir/", s.handleWorkdir)
 	mux.HandleFunc("/api/v1/ssh-setup", s.handleSSHSetup)
@@ -1237,6 +1238,29 @@ func (s *Server) handleJobsAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	// Error ignored: response already committed
 	json.NewEncoder(w).Encode(map[string]interface{}{"jobs": jobs})
+}
+
+func (s *Server) handleProvidersAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	clouds := s.registry.List()
+	results := make([]provider.PreflightResult, 0, len(clouds))
+	for _, cloud := range clouds {
+		if prov, ok := s.registry.Get(cloud); ok {
+			results = append(results, prov.Preflight(ctx))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"providers": results,
+	})
 }
 
 // Nodes API

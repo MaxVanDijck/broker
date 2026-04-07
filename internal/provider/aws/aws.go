@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"broker/internal/domain"
 	"broker/internal/provider"
@@ -84,6 +85,122 @@ func New(logger *slog.Logger, serverURL string) *Provider {
 
 func (p *Provider) Name() domain.CloudProvider {
 	return domain.CloudAWS
+}
+
+func (p *Provider) Preflight(ctx context.Context) provider.PreflightResult {
+	result := provider.PreflightResult{
+		Cloud:  string(domain.CloudAWS),
+		Status: "healthy",
+		Checks: make([]provider.PreflightCheck, 0, 4),
+	}
+
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(DefaultRegion))
+	if err != nil {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "credentials",
+			Status:  "error",
+			Message: fmt.Sprintf("failed to load AWS config: %s", err),
+		})
+		return result
+	}
+
+	stsClient := sts.NewFromConfig(cfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "credentials",
+			Status:  "error",
+			Message: fmt.Sprintf("AWS credentials invalid or not configured: %s", err),
+		})
+		return result
+	}
+	result.Checks = append(result.Checks, provider.PreflightCheck{
+		Name:    "credentials",
+		Status:  "ok",
+		Message: fmt.Sprintf("authenticated as %s", aws.ToString(identity.Arn)),
+	})
+
+	ec2Client := ec2.NewFromConfig(cfg)
+	_, err = ec2Client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{
+		RegionNames: []string{DefaultRegion},
+	})
+	if err != nil {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "region",
+			Status:  "error",
+			Message: fmt.Sprintf("cannot reach EC2 in %s: %s", DefaultRegion, err),
+		})
+		return result
+	}
+	result.Checks = append(result.Checks, provider.PreflightCheck{
+		Name:    "region",
+		Status:  "ok",
+		Message: fmt.Sprintf("EC2 reachable in %s", DefaultRegion),
+	})
+
+	vpcs, err := ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("isDefault"), Values: []string{"true"}},
+		},
+	})
+	if err != nil {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "vpc",
+			Status:  "error",
+			Message: fmt.Sprintf("failed to describe VPCs: %s", err),
+		})
+		return result
+	}
+	if len(vpcs.Vpcs) == 0 {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "vpc",
+			Status:  "error",
+			Message: "no default VPC found; specify subnet_id in task resources or create one with: aws ec2 create-default-vpc",
+		})
+		return result
+	}
+	vpcID := aws.ToString(vpcs.Vpcs[0].VpcId)
+	result.Checks = append(result.Checks, provider.PreflightCheck{
+		Name:    "vpc",
+		Status:  "ok",
+		Message: fmt.Sprintf("default VPC %s", vpcID),
+	})
+
+	subnets, err := ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+		},
+	})
+	if err != nil {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "subnets",
+			Status:  "error",
+			Message: fmt.Sprintf("failed to describe subnets: %s", err),
+		})
+		return result
+	}
+	if len(subnets.Subnets) == 0 {
+		result.Status = "unhealthy"
+		result.Checks = append(result.Checks, provider.PreflightCheck{
+			Name:    "subnets",
+			Status:  "error",
+			Message: fmt.Sprintf("no subnets found in default VPC %s", vpcID),
+		})
+		return result
+	}
+	result.Checks = append(result.Checks, provider.PreflightCheck{
+		Name:    "subnets",
+		Status:  "ok",
+		Message: fmt.Sprintf("%d subnet(s) in VPC %s", len(subnets.Subnets), vpcID),
+	})
+
+	return result
 }
 
 // fallbackRegions is the ordered list of regions to try when capacity is

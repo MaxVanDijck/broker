@@ -49,6 +49,14 @@ func (m *mockProvider) Teardown(ctx context.Context, cluster *domain.Cluster) er
 	return nil
 }
 
+func (m *mockProvider) Preflight(_ context.Context) provider.PreflightResult {
+	return provider.PreflightResult{
+		Cloud:  string(domain.CloudAWS),
+		Status: "healthy",
+		Checks: []provider.PreflightCheck{},
+	}
+}
+
 func (m *mockProvider) Status(_ context.Context, _ *domain.Cluster) (domain.ClusterStatus, error) {
 	return domain.ClusterStatusUp, nil
 }

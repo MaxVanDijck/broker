@@ -16,6 +16,18 @@ type NodeInfo struct {
 	InstanceType string
 }
 
+type PreflightCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type PreflightResult struct {
+	Cloud  string           `json:"cloud"`
+	Status string           `json:"status"`
+	Checks []PreflightCheck `json:"checks"`
+}
+
 type Provider interface {
 	Name() domain.CloudProvider
 
@@ -23,6 +35,7 @@ type Provider interface {
 	Stop(ctx context.Context, cluster *domain.Cluster) error
 	Start(ctx context.Context, cluster *domain.Cluster) error
 	Teardown(ctx context.Context, cluster *domain.Cluster) error
+	Preflight(ctx context.Context) PreflightResult
 }
 
 type Registry struct {
