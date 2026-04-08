@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { StatusBadge } from "@/components/status-badge";
+import { authFetch } from "@/lib/auth";
 import { Activity, RefreshCw } from "lucide-react";
 
 interface Job {
@@ -17,7 +18,7 @@ interface Job {
 
 function fetchJobs(cluster?: string): Promise<{ jobs: Job[] }> {
   const params = cluster ? `?cluster=${cluster}` : "";
-  return fetch(`/api/v1/jobs${params}`).then((r) => {
+  return authFetch(`/api/v1/jobs${params}`).then((r) => {
     if (!r.ok) throw new Error(`${r.status}`);
     return r.json();
   });

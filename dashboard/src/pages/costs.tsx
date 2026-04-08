@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { StatusBadge } from "@/components/status-badge";
+import { authFetch } from "@/lib/auth";
 import { DollarSign, RefreshCw, AlertTriangle } from "lucide-react";
 
 interface CostCluster {
@@ -31,7 +32,7 @@ export function CostsPage() {
   const { data, isLoading, refetch, isFetching } = useQuery<CostSummary>({
     queryKey: ["costs"],
     queryFn: () =>
-      fetch("/api/v1/costs").then((r) => {
+      authFetch("/api/v1/costs").then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),

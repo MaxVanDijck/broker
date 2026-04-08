@@ -65,7 +65,7 @@ func serveCmd() *cobra.Command {
 
 			registry := provider.NewRegistry()
 			if cfg.APIServer.PublicURL != "" {
-				registry.Register(awsprovider.New(logger.With("provider", "aws"), cfg.APIServer.PublicURL))
+				registry.Register(awsprovider.New(logger.With("provider", "aws"), cfg.APIServer.PublicURL, brokerToken()))
 			}
 
 			oidcCfg := &auth.VerifierConfig{

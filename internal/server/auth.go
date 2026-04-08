@@ -62,6 +62,13 @@ func authMiddleware(verifier *auth.Verifier, next http.Handler) http.Handler {
 
 		authorization := r.Header.Get("Authorization")
 
+		// SSE (EventSource) cannot send custom headers. The dashboard passes
+		// the token as a query parameter for the /api/v1/events endpoint.
+		if authorization == "" && r.URL.Query().Get("token") != "" {
+			qToken := r.URL.Query().Get("token")
+			authorization = "Basic " + base64.StdEncoding.EncodeToString([]byte("broker:"+qToken))
+		}
+
 		if strings.HasPrefix(authorization, "Bearer ") {
 			rawToken := strings.TrimPrefix(authorization, "Bearer ")
 			if verifier == nil {

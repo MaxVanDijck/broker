@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { authFetch } from "@/lib/auth";
 import { Cloud, RefreshCw } from "lucide-react";
 
 interface PreflightCheck {
@@ -21,7 +22,7 @@ export function ProvidersPage() {
   const { data, isLoading, refetch, isFetching } = useQuery<ProvidersResponse>({
     queryKey: ["providers"],
     queryFn: () =>
-      fetch("/api/v1/providers").then((r) => {
+      authFetch("/api/v1/providers").then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),

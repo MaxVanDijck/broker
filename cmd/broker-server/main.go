@@ -85,7 +85,8 @@ func initProviders(cfg *config.Config, logger *slog.Logger) *provider.Registry {
 
 	publicURL := cfg.APIServer.PublicURL
 	if publicURL != "" {
-		awsProvider := awsprovider.New(logger.With("provider", "aws"), publicURL)
+		token := os.Getenv("BROKER_TOKEN")
+		awsProvider := awsprovider.New(logger.With("provider", "aws"), publicURL, token)
 		registry.Register(awsProvider)
 		logger.Info("registered aws provider", "server_url", publicURL)
 	}

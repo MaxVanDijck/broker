@@ -4,6 +4,7 @@ import { useMemo, useState, useCallback } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { LogViewer } from "@/components/log-viewer";
 import { MetricsChart } from "@/components/metrics-chart";
+import { authFetch } from "@/lib/auth";
 import {
   ArrowLeft,
   Server,
@@ -62,7 +63,7 @@ export function ClusterDetailPage() {
   const { data: cluster } = useQuery<ClusterInfo>({
     queryKey: ["cluster", id],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${id}`).then((r) => {
+      authFetch(`/api/v1/clusters/${id}`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
@@ -72,7 +73,7 @@ export function ClusterDetailPage() {
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[]; workdir_id?: string }>({
     queryKey: ["cluster-nodes", id],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${id}/nodes`).then((r) => {
+      authFetch(`/api/v1/clusters/${id}/nodes`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
@@ -129,7 +130,7 @@ export function ClusterDetailPage() {
                   icon={Server}
                   onClick={async () => {
                     if (confirm(`Tear down cluster ${clusterName}?`)) {
-                      await fetch(`/api/v1/clusters/${id}`, { method: "DELETE" });
+                      await authFetch(`/api/v1/clusters/${id}`, { method: "DELETE" });
                       queryClient.invalidateQueries({ queryKey: ["cluster", id] });
                       queryClient.invalidateQueries({ queryKey: ["clusters"] });
                     }
@@ -176,7 +177,7 @@ function NodesSection({ clusterId }: { clusterId: string }) {
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[] }>({
     queryKey: ["cluster-nodes", clusterId],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${clusterId}/nodes`).then((r) => {
+      authFetch(`/api/v1/clusters/${clusterId}/nodes`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
@@ -188,7 +189,7 @@ function NodesSection({ clusterId }: { clusterId: string }) {
     queryFn: () => {
       const now = new Date();
       const from = new Date(now.getTime() - 30 * 60 * 1000);
-      return fetch(
+      return authFetch(
         `/api/v1/clusters/${clusterId}/metrics?from=${from.toISOString()}&to=${now.toISOString()}`,
       ).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
@@ -306,7 +307,7 @@ function VSCodeButton({ name, workdirPath }: { name: string; workdirPath: string
   const vscodeURL = `vscode://vscode-remote/ssh-remote+${name}.broker${workdirPath}`;
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
-    await fetch("/api/v1/ssh-setup", { method: "POST" }).catch(() => {});
+    await authFetch("/api/v1/ssh-setup", { method: "POST" }).catch(() => {});
     window.location.href = vscodeURL;
   }, [vscodeURL]);
 

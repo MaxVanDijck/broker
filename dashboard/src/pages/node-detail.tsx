@@ -2,6 +2,7 @@ import { useParams, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { MetricsChart } from "@/components/metrics-chart";
+import { authFetch } from "@/lib/auth";
 import { ArrowLeft, Cpu, HardDrive } from "lucide-react";
 
 interface MetricPoint {
@@ -36,7 +37,7 @@ export function NodeDetailPage() {
   const { data: nodesData } = useQuery<{ nodes: NodeInfo[] }>({
     queryKey: ["cluster-nodes", id],
     queryFn: () =>
-      fetch(`/api/v1/clusters/${id}/nodes`).then((r) => {
+      authFetch(`/api/v1/clusters/${id}/nodes`).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),
@@ -50,7 +51,7 @@ export function NodeDetailPage() {
     queryFn: () => {
       const now = new Date();
       const from = new Date(now.getTime() - 30 * 60 * 1000);
-      return fetch(
+      return authFetch(
         `/api/v1/clusters/${id}/metrics?from=${from.toISOString()}&to=${now.toISOString()}&node_id=${nodeId}`,
       ).then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);

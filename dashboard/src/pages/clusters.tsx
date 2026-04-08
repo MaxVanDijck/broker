@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { StatusBadge } from "@/components/status-badge";
+import { authFetch } from "@/lib/auth";
 import { Server, RefreshCw } from "lucide-react";
 
 interface Cluster {
@@ -23,7 +24,7 @@ interface CostCluster {
 }
 
 function fetchClusters(): Promise<{ clusters: Cluster[] }> {
-  return fetch("/api/v1/clusters").then((r) => {
+  return authFetch("/api/v1/clusters").then((r) => {
     if (!r.ok) throw new Error(`${r.status}`);
     return r.json();
   });
@@ -39,7 +40,7 @@ export function ClustersPage() {
   const { data: costData } = useQuery<{ clusters: CostCluster[] }>({
     queryKey: ["costs"],
     queryFn: () =>
-      fetch("/api/v1/costs").then((r) => {
+      authFetch("/api/v1/costs").then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       }),

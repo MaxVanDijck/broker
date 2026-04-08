@@ -1,3 +1,5 @@
+import { getStoredToken } from "./auth";
+
 export type ServerEventType =
   | "cluster_update"
   | "node_online"
@@ -12,7 +14,13 @@ export interface ServerEvent {
 export type EventHandler = (event: ServerEvent) => void;
 
 export function connectEvents(onEvent: EventHandler): () => void {
-  const source = new EventSource("/api/v1/events");
+  const token = getStoredToken();
+  let url = "/api/v1/events";
+  if (token) {
+    url += "?token=" + encodeURIComponent(token);
+  }
+
+  const source = new EventSource(url);
 
   const eventTypes: ServerEventType[] = [
     "cluster_update",

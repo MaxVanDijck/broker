@@ -28,6 +28,10 @@ aws:
 auth:
   token: ""
 
+service:
+  type: ClusterIP
+  annotations: {}
+
 ingress:
   enabled: false
   className: nginx

@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { cn } from "@/lib/cn";
-import { Server, Activity, DollarSign, Terminal, Cloud } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { Server, Activity, DollarSign, Terminal, Cloud, LogOut } from "lucide-react";
 
 const nav = [
   { to: "/", label: "Clusters", icon: Server },
@@ -11,6 +12,7 @@ const nav = [
 
 export function Layout() {
   const location = useLocation();
+  const auth = useAuth();
 
   return (
     <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
@@ -37,6 +39,17 @@ export function Layout() {
               </Link>
             ))}
           </nav>
+          <div className="ml-auto">
+            {auth.token && (
+              <button
+                onClick={auth.logout}
+                className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-neutral-400 transition-colors hover:text-neutral-200"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
+            )}
+          </div>
         </div>
       </header>
       <main className="flex-1 overflow-y-auto">

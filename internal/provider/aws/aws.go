@@ -74,12 +74,14 @@ var acceleratorInstanceTypes = map[string]string{
 type Provider struct {
 	logger    *slog.Logger
 	serverURL string
+	token     string
 }
 
-func New(logger *slog.Logger, serverURL string) *Provider {
+func New(logger *slog.Logger, serverURL string, token string) *Provider {
 	return &Provider{
 		logger:    logger,
 		serverURL: serverURL,
+		token:     token,
 	}
 }
 
@@ -281,7 +283,7 @@ func (p *Provider) launchInRegion(ctx context.Context, cluster *domain.Cluster, 
 	for i := range numNodes {
 		nodeID := fmt.Sprintf("%s-node-%d", cluster.Name, i)
 
-		userData := generateUserData(p.serverURL, cluster.Name, nodeID, cluster.ID)
+		userData := generateUserData(p.serverURL, cluster.Name, nodeID, p.token)
 
 		runInput := &ec2.RunInstancesInput{
 			ImageId:      aws.String(amiID),

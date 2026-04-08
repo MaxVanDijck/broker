@@ -231,7 +231,7 @@ func TestGenerateUserData(t *testing.T) {
 
 func TestProviderName(t *testing.T) {
 	t.Run("given aws provider, when calling Name, then aws is returned", func(t *testing.T) {
-		p := New(nil, "")
+		p := New(nil, "", "")
 		if p.Name() != domain.CloudAWS {
 			t.Errorf("expected %s, got %s", domain.CloudAWS, p.Name())
 		}

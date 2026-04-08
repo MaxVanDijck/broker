@@ -56,6 +56,8 @@ spec:
               value: /data
             - name: BROKER_CONFIG_FILE
               value: /etc/broker/config.yaml
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
             {{- if .Values.aws.enabled }}
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
@@ -101,19 +103,19 @@ spec:
             - name: config
               mountPath: /etc/broker
               readOnly: true
-            {{- if .Values.persistence.enabled }}
             - name: data
               mountPath: /data
-            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "broker.fullname" . }}
-        {{- if .Values.persistence.enabled }}
         - name: data
+          {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "broker.fullname" . }}
-        {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
