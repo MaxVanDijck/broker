@@ -8,10 +8,14 @@ import (
 	"syscall"
 
 	"broker/internal/config"
+	"broker/internal/state"
+	"broker/internal/analytics"
 )
 
 func main() {
 	ctx := context.Background()
+	defer ctx.Done()
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -24,11 +28,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO(max): initialise state store
 	logger.InfoContext(ctx, "initialising state store")
-	
+	stateStore, err := initStateStore(cfg, logger)
+	if err != nil {
+		logger.Error("failed to initialise state store", "error", err)
+		os.Exit(1)
+	}
+    defer func() {
+        err = stateStore.Close()
+		logger.ErrorContext(ctx, "failed to close state store", "error", err)
+    }()
 
-	// TODO(max): initialise analystics store
+	logger.InfoContext(ctx, "initialising analytics store")
+	analyticsStore, err := initAnalyticsStore(cfg, logger)
+	if err != nil {
+		logger.Error("failed to initialise analytics store", "error", err)
+		os.Exit(1)
+	}
+    defer func() {
+        err = analyticsStore.Close()
+		logger.ErrorContext(ctx, "failed to close analytics store", "error", err)
+    }()
 
 	// TODO(max): initialise cloud providers
 
@@ -36,31 +56,39 @@ func main() {
 }
 
 // TODO(max): implement StateStore contract
-func initStateStore(cfg *config.Config, logger *slog.Logger) (store.StateStore, error) {
+func initStateStore(cfg *config.Config, logger *slog.Logger) (state.Store, error) {
 	// TODO(max): fix DSN in config
 	switch cfg.State.Backend {
 		case config.StateStorePostgres:
 			logger.Info("using postgresql state store")
-		    // TODO(max): implement Postgres state Store
-			return store.NewPostgres(cfg.State.DSN), nil
+		    // TODO(max): pass a DSN (data source name)
+			return state.NewPostgresStore(), nil
 		case config.StateStoreSQLite:
 			logger.Info("using sqlite state store")
-		    // TODO(max): implement sqlite state store
-			return store.NewSQLite(cfg.State.DSN), nil
+		    // TODO(max): pass a DSN (data source name)
+			return state.NewSqliteStore(), nil
+		default:
+			logger.Warn("falling back to sqlite state store")
+		    // TODO(max): pass a DSN (data source name)
+			return state.NewSqliteStore(), nil
 	}
 }
 
 // TODO(max): implement Analytics store contract
-func initAnalyticsStore(cfg *config.Config, dataDir string, logger *slog.Logger) (store.AnalyticsStore, error) {
+func initAnalyticsStore(cfg *config.Config, logger *slog.Logger) (analytics.Store, error) {
 	// TODO(max): fix DSN in config
 	switch cfg.Analytics.Backend {
 		case config.AnalyticsStoreClickHouse:
 			logger.Info("using clickhouse analytics store")
-		    // TODO(max): implement Postgres analytics Store
-			return store.NewClickhouse(cfg.State.DSN), nil
+		    // TODO(max): pass a DSN (data source name)
+			return analytics.NewClickhouseStore(), nil
 		case config.AnalyticsStoreSQLite:
-			logger.Info("using clickhouse analytics store")
-		    // TODO(max): implement Postgres analytics Store
-			return store.NewSQLite(cfg.State.DSN), nil
+			logger.Info("using sqlite analytics store")
+		    // TODO(max): pass a DSN (data source name)
+			return analytics.NewSqliteStore(), nil
+		default:
+			logger.Warn("falling back to sqlite analytics store")
+		    // TODO(max): pass a DSN (data source name)
+			return analytics.NewSqliteStore(), nil
 	}
 }
